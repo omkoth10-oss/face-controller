@@ -1,6 +1,6 @@
 # Face Controller — Project Brief
 
-> Claude: read this at the start of every session. At the end of every session, update the **Progress Log** and **Next Steps** sections at the bottom.
+> Claude: read this at the start of every session. After every change, update this file (including **Progress Log** and **Next Steps**), then commit and push.
 
 ## The idea
 A free Mac app that turns your webcam into a game controller. You move your head or make facial expressions (tilt head up, raise eyebrows, open mouth) and the app presses keys or moves the mouse. It sends real-looking keyboard/mouse input at the OS level, so it works with almost any game without the game needing to support it.
@@ -24,6 +24,12 @@ Working name: TBD (placeholder "Face Controller").
 - Free and open source (GitHub), optional donation link. Impact over money.
 - Real users matter more than features. Target: ~1,000 downloads year one, 50+ real active users, 1+ strong user story.
 - Get feedback from disabled gamers (AbleGamers, possibly their Player Panels playtesting program).
+
+## Product format (decided 2026-10-18)
+- **Downloadable app** does the real work. A website alone can't work: browsers block sites from pressing keys in other apps/games.
+- **Website** (built around launch): landing page, demo video, Download button.
+- **Browser demo** on the website: a simple face-controlled jump game so people can try it in seconds before downloading.
+- Order: build the app first, website + browser demo at launch.
 
 ## Tech plan
 - **Prototype:** Python 3.11/3.12, MediaPipe Face Landmarker, OpenCV, pynput. One file + requirements.txt.
@@ -77,10 +83,10 @@ Key question for every tester: **"What made you stop using it?"**
 - Use whatever level of complexity the project actually needs, but keep it well-organized and commented, and briefly explain new or tricky parts in plain language so I understand how it works.
 - Reliability over new features.
 - Don't add features outside this brief without asking.
-- Update this file at the end of each session.
+- **After every change** (code, decision, or plan update): update this file to match, then commit and push to GitHub so cloud and local sessions always stay in sync.
 
 ## Progress Log
-- 2026-10-18: Project planned. No code yet.
+- 2026-10-18: Project planned. GitHub repo created (private). Decided: downloadable app + website with browser demo. No code yet.
 
 ## Next Steps
 - Build the Phase 1 prototype.
