@@ -1,0 +1,35 @@
+# Compiles the app on a real Mac (GitHub's macOS runner) on every push.
+# The cloud dev environment is Linux and can't build macOS apps, so this is
+# how we check that the code compiles before testing it on the Mac.
+name: macOS build
+
+on:
+  push:
+    branches:
+      - main
+      - "claude/**"   # Claude's working branches, checked before merging into main.
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:   # Lets you start a build by hand from the Actions tab.
+
+jobs:
+  build:
+    name: swift build (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Show macOS, Xcode and Swift versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build (debug, same as `swift run`)
+        run: swift build
+
+      - name: Build (release)
+        run: swift build -c release
