@@ -56,6 +56,21 @@ Decide by prototyping and testing, not guessing.
 - **Input:** CGEvent for key presses and mouse movement.
 - **Permissions:** Camera, Accessibility, Input Monitoring. Onboarding must guide users clearly.
 - **Distribution:** GitHub release first; later signing/notarization ($99/yr Apple Developer) to avoid "unidentified developer" warnings.
+- **Build:** Swift Package Manager executable (`Package.swift`, swift-tools 5.9, macOS 13+), run with `swift run`. No third-party dependencies.
+- **CI:** GitHub Actions (`.github/workflows/build.yml`) runs `swift build` (debug + release) on a macOS runner on every push to `main` and `claude/**` branches, PRs to `main`, and by hand. Cloud sessions can't compile macOS code, so this is the compile check: don't call work done until it's green.
+
+## Code map (Phase 1)
+All code is in `Sources/FaceController/`:
+- `Support/Config.swift`: **every tunable number** (thresholds, timings, camera, smoothing, kill-switch key).
+- `Camera/CameraManager.swift`: AVFoundation capture, picks fastest fps (≤60) then size closest to 640x480, drops late frames.
+- `Tracking/HeadPoseTracker.swift`: Vision → pitch/yaw/roll. `Tracking/OneEuroFilter.swift`: smoothing.
+- `Calibration/Calibrator.swift`: neutral pose = median of 3 s of face-visible samples.
+- `Gestures/ThresholdGesture.swift`: hysteresis + hold time → press/release.
+- `Input/KeyboardOutput.swift`: CGEvent keys; tracks held keys; "block reasons" (control off, calibrating, no permission, quitting) release everything and refuse presses.
+- `Engine/ControlEngine.swift`: the tight loop on one serial queue (camera → Vision → gesture → key), face-lost rule, 50 ms watchdog, snapshots for the UI.
+- `Safety/`: `GlobalHotKey.swift` (Carbon kill switch), `ExitGuard.swift` (atexit + SIGINT/SIGTERM/SIGHUP/SIGQUIT release keys), `Permissions.swift`.
+- `App/`: `FaceControllerApp.swift` (@main, activation policy), `AppController.swift` (wiring, permissions, kill switch).
+- `UI/`: `DebugView.swift`, `CameraPreview.swift`.
 
 ## Features (priority order)
 **Must-haves**
@@ -89,7 +104,7 @@ Decide by prototyping and testing, not guessing.
 - Anti-cheat games (e.g., Valorant) may block simulated input. Focus on casual and single-player games.
 
 ## Roadmap
-1. **Swift prototype** (2–3 sessions): camera + Vision tracking, head tilt up = hold Space, calibration, debug window. Test in TextEdit → Chrome dino game → Minecraft.
+1. **Swift prototype** (2–3 sessions): camera + Vision tracking, head tilt up = hold Space, calibration, debug window. Test in TextEdit → Chrome dino game → Minecraft. *(Built 2026-10-18, awaiting owner testing.)*
 2. **Core gestures + aiming** (4–6 sessions): turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency measurement.
 3. **Solve head move-vs-aim** (2–3 sessions): prototype options, test, pick one.
 4. **Settings UI + mapping + onboarding** (3–5 sessions).
@@ -106,8 +121,24 @@ Key question for every tester: **"What made you stop using it?"**
 - **After every change** (code, decision, or plan update): update this file to match, then commit and push to GitHub so cloud and local sessions always stay in sync.
 - Note: cloud sessions can't use the webcam. Write code in the cloud; the owner tests on his Mac.
 
+## Phase 1 decisions and starting settings (2026-10-18, untested on hardware)
+- **Head angles:** `VNDetectFaceRectanglesRequest` revision 3 (fastest Vision face request; continuous pitch/yaw/roll). Landmarks wait for Phase 2 expressions.
+- **Pitch direction is unverified:** Apple doesn't document the sign. Code assumes tilting UP makes Vision pitch NEGATIVE. `Config.TiltUp.flipDirection = true` swaps it. First thing to confirm in testing.
+- **Tilt up = hold Space:** press at 10°, release below 6°, 80 ms hold. Release is immediate.
+- **Smoothing:** One Euro filter (minCutoff 2.5 Hz, beta 0.1): heavy when still, near zero when moving fast.
+- **Calibration:** 3 s of face-visible time at launch; median of samples; C (window focused) or button recalibrates. Presses blocked while calibrating.
+- **Kill switch:** ⌃⌥⌘K (Control+Option+Command+K), Carbon `RegisterEventHotKey` (works in any app, needs no permission). Plays "Tink" (on) / "Pop" (off). Control starts ON after the first calibration (`Config.Safety.startWithControlOn`).
+- **Safety:** keys released on control off, face lost > 200 ms, camera frames stopping (watchdog), Accessibility revoked (polled every 0.5 s), quit/Ctrl+C/Terminal closed. After any release the gesture needs a return to neutral before it can fire again. Crash / `kill -9` can't be caught: tap real Space.
+- **Key events:** `CGEvent` from a `.hidSystemState` source, posted at `.cghidEventTap`, modifier flags cleared. Held keys don't auto-repeat (expected; games track held state).
+- **Camera:** fastest fps up to 60 (most built-in Mac cameras: 30), resolution closest to 640x480 within 480x360–1280 wide, frame rate locked (no low-light slowdown).
+- **Latency shown:** camera capture timestamp → key event sent (plus Vision time, total processing, camera delay, FPS, dropped frames).
+- **Permissions:** when run via `swift run` they belong to Terminal (or iTerm/VS Code). The window shows step-by-step instructions + buttons to System Settings.
+
 ## Progress Log
 - 2026-10-18: Project planned. GitHub repo created (private). Decided: downloadable app + website with browser demo. Clarified: mainly for disabled gamers, fully face-controlled (head + expressions + head aiming), must work in fast games, native Swift, Apple Silicon, no voice. No code yet.
+- 2026-10-18: **Phase 1 prototype built** (code only; compiles on macOS CI, not yet run on a real Mac). SwiftPM app with SwiftUI debug window: camera preview, pitch/yaw/roll (raw + vs. neutral), calibration status, threshold bar with press/release lines, "% to trigger", Space held, control ON/OFF, FPS, Vision/processing time, frame→key latency, recent safety events, permission instructions. Gesture: tilt head up = hold Space. Added README.md (setup, permissions, kill switch, tuning), TESTING.md (TextEdit → Chrome dino → Minecraft checklist + report template), .gitignore, and the GitHub Actions macOS build.
 
 ## Next Steps
-- Build the Phase 1 Swift prototype.
+- Owner runs Phase 1 on the Mac and works through TESTING.md, then pastes back the report (first: does "Tilt up" go positive when tilting up? camera fps, processing time, frame→key latency, false triggers when talking/laughing).
+- Tune `Config.swift` from those numbers (thresholds, hold time, smoothing, pitch direction).
+- Then start Phase 2: turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency work.

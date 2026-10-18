@@ -219,6 +219,9 @@ struct DebugView: View {
     // MARK: - Gesture
 
     private var phaseText: String {
+        if let reason = snap.blockReasons.first {
+            return "Blocked: \(reason.rawValue)"
+        }
         switch snap.gesturePhase {
         case .waitingForNeutral: return "Return to neutral to arm"
         case .ready: return "Ready"

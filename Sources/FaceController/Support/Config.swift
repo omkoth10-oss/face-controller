@@ -104,7 +104,7 @@ enum Config {
         static let watchdogInterval: Double = 0.050
 
         /// How often we re-check Camera and Accessibility permissions.
-        static let permissionCheckInterval: Double = 1.0
+        static let permissionCheckInterval: Double = 0.5
 
         /// Whether control turns on by itself after the first calibration finishes.
         /// You can always toggle it with the kill-switch hotkey.

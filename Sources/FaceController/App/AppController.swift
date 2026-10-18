@@ -68,10 +68,12 @@ final class AppController {
         registerKillSwitch()
 
         checkPermissions()
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: Config.Safety.permissionCheckInterval,
-                                               repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: Config.Safety.permissionCheckInterval, repeats: true) { [weak self] _ in
             self?.checkPermissions()
         }
+        // `.common` keeps the timer running even while you drag the window or use a menu.
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
     }
 
     /// Called when the app quits.
@@ -80,8 +82,8 @@ final class AppController {
         permissionTimer?.invalidate()
         permissionTimer = nil
         killSwitch = nil
-        engine.stop()
-        camera.stop()
+        // The camera is closed automatically when the process exits. We don't wait
+        // for it to stop here: waiting on the main thread while quitting could hang.
     }
 
     // MARK: - Control on/off (kill switch)

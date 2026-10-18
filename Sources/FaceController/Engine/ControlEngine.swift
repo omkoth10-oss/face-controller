@@ -89,14 +89,6 @@ final class ControlEngine {
         }
     }
 
-    /// Stops the watchdog. Waits until the tracking queue is idle.
-    func stop() {
-        queue.sync {
-            self.watchdog?.cancel()
-            self.watchdog = nil
-        }
-    }
-
     // MARK: - Camera callbacks (called on `queue` by CameraManager)
 
     func frameDropped() {

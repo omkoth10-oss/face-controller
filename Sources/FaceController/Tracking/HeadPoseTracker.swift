@@ -52,7 +52,11 @@ final class HeadPoseTracker {
 
     init() {
         faceRequest = VNDetectFaceRectanglesRequest()
-        faceRequest.revision = VNDetectFaceRectanglesRequestRevision3
+        // Ask for revision 3 explicitly (if this macOS has it) so behavior doesn't
+        // silently change when Apple adds a new revision.
+        if VNDetectFaceRectanglesRequest.supportedRevisions.contains(VNDetectFaceRectanglesRequestRevision3) {
+            faceRequest.revision = VNDetectFaceRectanglesRequestRevision3
+        }
     }
 
     /// Runs Vision on one frame. Call this from the tracking queue only.

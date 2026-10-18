@@ -71,7 +71,7 @@ final class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         super.init()
     }
 
-    // MARK: - Start / stop
+    // MARK: - Start
 
     /// Configures (first time only) and starts the camera.
     /// `completion` is called on a background queue.
@@ -92,15 +92,6 @@ final class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 completion(.failure(error))
             } catch {
                 completion(.failure(.cannotOpen(error.localizedDescription)))
-            }
-        }
-    }
-
-    /// Stops the camera. Waits until it has stopped (used when quitting).
-    func stop() {
-        sessionQueue.sync {
-            if self.session.isRunning {
-                self.session.stopRunning()
             }
         }
     }
