@@ -217,6 +217,8 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-19: Owner: **Google Snake "looks great"** after the latest fixes. Snake milestone done. Next: lock in his slider values as defaults, record a demo clip, then Phase 3.
 
+- 2026-10-19: Owner doesn't have Minecraft on his Mac. Phase 3 (move vs. aim) will be tested in **Minecraft Classic in the browser** (classic.minecraft.net, free, official Mojang, WASD + mouse look + Space jump) instead.
+
 ## Next Steps
 - Owner re-tests **Google Snake** (TESTING.md 7): do unwanted extra turns still happen (screenshot the Turn log right after one)? Were any orange "IGNORED" lines real turns? Typical "head went to N°". Fast combos and diagonals should still all be ✓. Best score, copied values, frame→key average.
 - Owner tests the **floating center** (TESTING.md 1b) in Keys/Aim: held A/D/Space must never release by itself; nothing may fire after resting in a new spot; best Follow time.
