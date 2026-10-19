@@ -216,7 +216,11 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-19: **Snake round 5 built (code only; compiles on macOS CI, not yet tested on the Mac).** Likely causes: big fast moves swing back past center (a small opposite flick fires), and a fast move on one axis leaks into the other (flicks fire at only 1.5°). Added the extra-turn guard (on by default, toggle): during a swing-back or while the other axis moves faster, a flick must reach the full press threshold; small ones that stop short are logged in orange. Turn log adds "head went to N°" per turn; false "not re-armed yet" alarms removed. Checked with a Python port of the axis logic on simulated head motion: small swing-backs and leaks are now ignored; right → down → left, a U-turn (right, up, left), a diagonal and a deliberate left → right still fire every turn with no added delay at 30 fps.
 
-- 2026-10-19: Owner: **Google Snake looks great now** (round 5). Asked to make the tuned slider values the Snake defaults (values read from the owner's screenshot, the pasted Copy text was missing): press 8.5°, re-arm 45%, hold 40 ms, smoothing 25%, flick 80°/s, min gap 45 ms, extra-turn guard on, blocks off; Follow time 1.5 s. Asked for Phase 3 in Minecraft (classic.minecraft.net) with three switchable options.
+- 2026-10-19: Owner: **Google Snake "looks great"** after the latest fixes. Snake milestone done. Next: lock in his slider values as defaults, record a demo clip, then Phase 3.
+
+- 2026-10-19: Owner doesn't have Minecraft on his Mac. Phase 3 (move vs. aim) will be tested in **Minecraft Classic in the browser** (classic.minecraft.net, free, official Mojang, WASD + mouse look + Space jump) instead.
+
+- 2026-10-19: Owner asked to make the tuned slider values the Snake defaults (read from the owner's screenshot; the pasted Copy text was missing): press 8.5°, re-arm 45%, hold 40 ms, smoothing 25%, flick 80°/s, min gap 45 ms, extra-turn guard on, blocks off; Follow time 1.5 s. Asked for Phase 3 in Minecraft Classic with three switchable options.
 
 - 2026-10-19: **Phase 3 options built (code only; compiles on macOS CI, not yet tested on the Mac).** New Minecraft mode with a head option picker: 1 Face moves, head aims (mouth = W, eyebrows = Space); 2 Mode switch (tilt toward a shoulder flips MOVE W/A/S/D ↔ AIM, sounds, pause while tilted, Switch now button); 3 Split zones (aim, plus W/A/S/D past the walk zone). Engine bindings/thresholds are now computed live per mode/option/job. Minecraft panel, always-on-top overlay label, floating center + safety rules in every option, closing the debug window quits even with the overlay up. Snake and Follow time defaults updated. TESTING.md section 8 (same course for every option + report), README Minecraft section.
 
@@ -224,4 +228,5 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 - Owner tests the three **Minecraft** options (TESTING.md 8) in full-screen Chrome on classic.minecraft.net and picks one. Report per option: look/walk/overall 1–5, accidental switches/walking, best slider values, worst part, and whether the view turns in the browser at all (pointer-lock deltas) and whether the overlay shows over full-screen Chrome.
 - Then refine the chosen option (and decide whether option 1 needs a third expression, e.g. smile = click; ask first). Right click (place block) has no gesture yet.
 - Owner tests the **floating center** (TESTING.md 1b) in Keys/Aim: held A/D/Space must never release by itself; nothing may fire after resting in a new spot.
+- Record a Snake demo clip (owner).
 - Still open from Phase 2: Direction pad check (yaw sign), mouth/eyebrow reliability numbers (Vision vs. MediaPipe decision), Aim mode feel.
