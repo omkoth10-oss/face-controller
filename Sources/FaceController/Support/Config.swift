@@ -142,7 +142,7 @@ enum Config {
     // MARK: - Snake mode
 
     /// Snake has its own fast, forgiving rules (see SnakeController.swift).
-    /// The first six values are only the STARTING values of the live sliders in the
+    /// The first five values are only the STARTING values of the live sliders in the
     /// debug window: once you move a slider, your value is saved and used instead.
     /// ("Reset to defaults" in the window goes back to these.)
     enum Snake {
@@ -158,8 +158,6 @@ enum Config {
         /// A quick head flick at least this fast (degrees per second) fires a turn
         /// right away, before you reach the press threshold. 0 = flicks off.
         static let defaultFlickSpeed: Double = 60
-        /// Slowly follow your posture while your head rests still near center.
-        static let defaultDriftCorrection = true
 
         /// Slider ranges.
         static let pressRange: ClosedRange<Double> = 2...12
@@ -170,23 +168,51 @@ enum Config {
 
         /// A flick only counts once the head is at least this fraction of the press
         /// threshold away from center (ignores tiny twitches).
-        static let flickMinFraction: Double = 0.4
-        /// Right after an axis re-arms, a flick in the OPPOSITE direction is ignored
-        /// for this long. Stops the swing back to center from firing the other way.
-        static let reverseFlickBlock: Double = 0.25
+        static let flickMinFraction: Double = 0.3
+        /// EARLY flick: fire as soon as the latest frame moves at least the flick speed
+        /// AND the frame before was already moving the same way at this fraction of it.
+        /// (Saves a frame compared with waiting for the two-frame average.)
+        static let flickOnsetFraction: Double = 0.5
+        /// BOUNCE-BACK block: right after an axis re-arms, a turn in the OPPOSITE
+        /// direction on that axis is ignored for this long (flick or position). That's
+        /// the swing back to center. (Snake can't reverse anyway, so nothing is lost.)
+        static let bounceBlock: Double = 0.35
+        /// DOUBLE-TURN block: the same direction can't fire twice within this time.
+        static let sameDirectionCooldown: Double = 0.25
         /// At most one turn per this many seconds (stops one diagonal move from
         /// firing two turns at once).
         static let minTurnInterval: Double = 0.10
         /// How long each tap holds the arrow key down before releasing it.
         static let tapDuration: Double = 0.030
+        /// How many lines the Turn log keeps.
+        static let turnLogLength = 14
+    }
 
-        /// Drift correction: only while your head is within this many degrees of
-        /// center on both axes...
-        static let driftZoneDegrees: Double = 2.0
-        /// ...and moving slower than this (degrees per second)...
-        static let driftStillSpeed: Double = 15
-        /// ...neutral moves toward where your head is, taking about this many seconds.
-        static let driftTimeConstant: Double = 2.0
+    // MARK: - Floating center (all modes)
+
+    /// The center follows your head: wherever your head comes to REST near the
+    /// center becomes the new center, so moves are measured from where you are now.
+    /// It never moves while a direction is firing/held or the pointer is moving.
+    /// ON by default in every mode; each mode has its own off switch, and the follow
+    /// speed is a slider (both in the debug window, saved between launches).
+    enum FloatingCenter {
+        static let defaultEnabled = true
+        /// Starting value of the "Follow time" slider: about how many seconds the center
+        /// takes to catch up with your resting head. Lower = follows faster.
+        static let defaultFollowTime: Double = 2.0
+        static let followTimeRange: ClosedRange<Double> = 0.3...8
+        /// Your head must be still (slower than this, degrees per second)...
+        static let stillSpeed: Double = 15
+        /// ...for at least this long before the center starts following.
+        static let restDwell: Double = 0.25
+        /// After a direction fires (key, turn), don't follow for this long, so the
+        /// settling movement isn't mistaken for a rest.
+        static let pauseAfterOutput: Double = 0.3
+        /// How close to the center counts as "resting near center":
+        /// Keys mode: this fraction of the smallest head press threshold (10° → 5°).
+        /// Aim mode: inside the aim deadzone (so the pointer never moves).
+        /// Snake mode: inside the re-arm zone.
+        static let keysZoneFraction: Double = 0.5
     }
 
     // MARK: - Recenter

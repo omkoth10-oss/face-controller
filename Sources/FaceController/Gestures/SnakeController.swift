@@ -4,13 +4,17 @@ import Foundation
 
 /// Snake settings you can change while playing (sliders in the debug window).
 /// Saved between launches in the app's preferences (UserDefaults).
+/// (The old "auto-recenter" switch moved to the Floating center settings.)
 struct SnakeSettings: Codable, Equatable {
     var pressDegrees = Config.Snake.defaultPressDegrees
     var rearmFraction = Config.Snake.defaultRearmFraction
     var holdTime = Config.Snake.defaultHoldTime
     var smoothing = Config.Snake.defaultSmoothing
     var flickSpeed = Config.Snake.defaultFlickSpeed
-    var driftCorrection = Config.Snake.defaultDriftCorrection
+
+    enum CodingKeys: String, CodingKey {
+        case pressDegrees, rearmFraction, holdTime, smoothing, flickSpeed
+    }
 
     /// Degrees below which an axis re-arms after a turn.
     var rearmDegrees: Double { pressDegrees * rearmFraction }
@@ -34,7 +38,7 @@ struct SnakeSettings: Codable, Equatable {
         let numbers = String(format: "press %.1f°, re-arm %.0f%%, hold %.0f ms, smoothing %.0f%%",
                              pressDegrees, rearmFraction * 100, holdTime * 1000, smoothing * 100)
         let flick = flickSpeed > 0 ? String(format: "%.0f°/s", flickSpeed) : "off"
-        return "\(numbers), flick \(flick), auto-recenter \(driftCorrection ? "on" : "off")"
+        return "\(numbers), flick \(flick)"
     }
 
     /// Keeps every value inside its slider range (e.g. after loading old saved values).
@@ -69,9 +73,40 @@ struct SnakeSettings: Codable, Equatable {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
     }
+
+    /// The old Snake "auto-recenter" switch from the previous version, if it was saved.
+    /// Used once, to carry your choice over to the new Floating center setting.
+    static func legacyDriftCorrection() -> Bool? {
+        struct Legacy: Decodable { let driftCorrection: Bool? }
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let legacy = try? JSONDecoder().decode(Legacy.self, from: data) else { return nil }
+        return legacy.driftCorrection
+    }
+}
+
+extension SnakeSettings {
+    /// Reads saved values, filling in defaults for anything missing (and ignoring
+    /// old keys), so your saved slider values keep working across app updates.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = SnakeSettings()
+        pressDegrees = try container.decodeIfPresent(Double.self, forKey: .pressDegrees) ?? defaults.pressDegrees
+        rearmFraction = try container.decodeIfPresent(Double.self, forKey: .rearmFraction) ?? defaults.rearmFraction
+        holdTime = try container.decodeIfPresent(Double.self, forKey: .holdTime) ?? defaults.holdTime
+        smoothing = try container.decodeIfPresent(Double.self, forKey: .smoothing) ?? defaults.smoothing
+        flickSpeed = try container.decodeIfPresent(Double.self, forKey: .flickSpeed) ?? defaults.flickSpeed
+    }
 }
 
 // MARK: - One axis
+
+/// What one axis did this frame.
+enum SnakeAxisResult {
+    /// A turn fired (sign +1 = left/up, −1 = right/down).
+    case fired(sign: Double, viaFlick: Bool)
+    /// A turn WANTED to fire but was held back, and why (shown in the Turn log).
+    case blocked(sign: Double, reason: String)
+}
 
 /// One axis of Snake mode: left/right OR up/down.
 ///
@@ -84,6 +119,11 @@ struct SnakeSettings: Codable, Equatable {
 ///
 /// Because the two axes are independent, you can chain "left" then "up" without
 /// first bringing your head all the way back to the center.
+///
+/// Two safety blocks stop turns you didn't mean:
+/// - BOUNCE-BACK: just after re-arming, a turn the OPPOSITE way on this axis is
+///   ignored for a moment (that's your head swinging back past the center).
+/// - DOUBLE TURN: the same direction can't fire twice in quick succession.
 struct SnakeAxis {
     enum Phase: Equatable {
         case armed
@@ -100,12 +140,19 @@ struct SnakeAxis {
 
     private(set) var phase: Phase = .waitingForReturn(sign: 0)
     private(set) var value: Double = 0
-    /// Degrees per second (signed), measured over the last couple of frames.
+    /// Degrees per second (signed), averaged over the last two frames (for display).
     private(set) var speed: Double = 0
 
     private var history: [(time: Double, value: Double)] = []
+    /// Speed over just the latest frame, and over the frame before it.
+    private var latestStepSpeed: Double = 0
+    private var previousStepSpeed: Double = 0
+
     private var lastFiredSign: Double = 0
+    private var lastFiredAt = -Double.infinity
     private var rearmedAt = -Double.infinity
+    /// Set once a blocked attempt has been reported, so one attempt = one log line.
+    private var reportedBlock = false
 
     init(positiveName: String, negativeName: String, axisName: String) {
         self.positiveName = positiveName
@@ -120,21 +167,17 @@ struct SnakeAxis {
         return true
     }
 
-    /// Feeds one frame. Returns the direction sign (+1 / −1) and whether it was a
-    /// flick, if this axis fires a turn. `allowFire` = false still tracks everything
-    /// but never fires (used when the other axis just fired).
-    mutating func update(value: Double, at time: Double, settings: SnakeSettings,
-                         allowFire: Bool) -> (sign: Double, viaFlick: Bool)? {
-        self.value = value
+    var isHolding: Bool {
+        if case .holding = phase { return true }
+        return false
+    }
 
-        // Speed over the last ~2 frames (less noisy than a single frame).
-        history.append((time, value))
-        if history.count > 3 { history.removeFirst() }
-        if let oldest = history.first, time - oldest.time > 0.001 {
-            speed = (value - oldest.value) / (time - oldest.time)
-        } else {
-            speed = 0
-        }
+    /// Feeds one frame. `globalBlock` (e.g. "too soon after the last turn") stops
+    /// any turn from firing this frame and is reported if a turn wanted to fire.
+    mutating func update(value: Double, at time: Double, settings: SnakeSettings,
+                         globalBlock: String?) -> SnakeAxisResult? {
+        self.value = value
+        updateSpeeds(value: value, time: time)
 
         // Waiting to re-arm: only this axis's value matters.
         if case .waitingForReturn(let sign) = phase {
@@ -142,6 +185,18 @@ struct SnakeAxis {
             if distanceTowardFiredSide < settings.rearmDegrees {
                 phase = .armed
                 rearmedAt = time
+                reportedBlock = false
+                return nil
+            }
+            // Flicking the same way AGAIN without coming back first: report it once,
+            // because "it didn't turn" is confusing otherwise. (Ignore the first moment
+            // after a turn: the head is usually still finishing that same movement.)
+            if sign != 0, time - lastFiredAt > Config.Snake.sameDirectionCooldown,
+               isFlick(toward: sign, settings: settings), !reportedBlock {
+                reportedBlock = true
+                return .blocked(sign: sign, reason: String(
+                    format: "not re-armed yet (%@ still at %.1f°, needs < %.1f°)",
+                    axisName as NSString, value * sign, settings.rearmDegrees))
             }
             return nil
         }
@@ -149,42 +204,60 @@ struct SnakeAxis {
         let sign: Double = value >= 0 ? 1 : -1
         let magnitude = abs(value)
 
+        // Head has settled: a new attempt may be reported again.
+        if magnitude < settings.flickMinDegrees && abs(speed) < settings.flickSpeed / 2 {
+            reportedBlock = false
+        }
+
         // Was holding but dropped back below the press threshold: cancel the hold.
         if case .holding(let holdSign, _) = phase, value * holdSign < settings.pressDegrees {
             phase = .armed
         }
 
-        // 1. FLICK: moving fast AWAY from center, already a little way out.
-        //    Fires immediately, no hold time: the speed itself shows you meant it.
-        if settings.flickSpeed > 0,
-           magnitude >= settings.flickMinDegrees,
-           speed * sign >= settings.flickSpeed,
-           !isReverseFlickBlocked(sign: sign, at: time) {
-            return allowFire ? fire(sign, viaFlick: true) : nil
+        // Does this frame WANT a turn, and how?
+        var wantsTurn = false
+        var viaFlick = false
+        if settings.flickSpeed > 0, magnitude >= settings.flickMinDegrees,
+           isFlick(toward: sign, settings: settings) {
+            // 1. FLICK: moving fast AWAY from center. No hold time: the speed shows you meant it.
+            wantsTurn = true
+            viaFlick = true
+        } else if magnitude >= settings.pressDegrees {
+            // 2. POSITION: past the press threshold for at least holdTime.
+            switch phase {
+            case .armed:
+                phase = .holding(sign: sign, since: time)
+                wantsTurn = settings.holdTime <= 0
+            case .holding(let holdSign, let since):
+                if holdSign != sign {
+                    phase = .holding(sign: sign, since: time)
+                } else {
+                    wantsTurn = time - since >= settings.holdTime
+                }
+            case .waitingForReturn:
+                break
+            }
+        }
+        guard wantsTurn else { return nil }
+
+        // Held back? Report it once per attempt; it may still fire once the block ends.
+        if let reason = blockReason(sign: sign, at: time) ?? globalBlock {
+            if reportedBlock { return nil }
+            reportedBlock = true
+            return .blocked(sign: sign, reason: reason)
         }
 
-        // 2. POSITION: past the press threshold for at least holdTime.
-        guard magnitude >= settings.pressDegrees else { return nil }
-        switch phase {
-        case .armed:
-            phase = .holding(sign: sign, since: time)
-            if settings.holdTime <= 0 && allowFire { return fire(sign, viaFlick: false) }
-            return nil
-        case .holding(let holdSign, let since):
-            if holdSign != sign {
-                phase = .holding(sign: sign, since: time)
-                return nil
-            }
-            if time - since >= settings.holdTime && allowFire { return fire(sign, viaFlick: false) }
-            return nil
-        case .waitingForReturn:
-            return nil
-        }
+        phase = .waitingForReturn(sign: sign)
+        lastFiredSign = sign
+        lastFiredAt = time
+        reportedBlock = false
+        return .fired(sign: sign, viaFlick: viaFlick)
     }
 
     /// After a safety reset: wait until the head is near the center before arming.
     mutating func requireReturn() {
         phase = .waitingForReturn(sign: 0)
+        reportedBlock = false
     }
 
     /// After a recenter: the head IS the center now, so arm straight away.
@@ -192,8 +265,12 @@ struct SnakeAxis {
         phase = .armed
         history.removeAll()
         speed = 0
+        latestStepSpeed = 0
+        previousStepSpeed = 0
         lastFiredSign = 0
+        lastFiredAt = -Double.infinity
         rearmedAt = -Double.infinity
+        reportedBlock = false
     }
 
     /// Plain-language state for the debug window, e.g. why it isn't firing.
@@ -216,14 +293,41 @@ struct SnakeAxis {
         }
     }
 
-    private mutating func fire(_ sign: Double, viaFlick: Bool) -> (sign: Double, viaFlick: Bool) {
-        phase = .waitingForReturn(sign: sign)
-        lastFiredSign = sign
-        return (sign, viaFlick)
+    // MARK: Private
+
+    private mutating func updateSpeeds(value: Double, time: Double) {
+        history.append((time, value))
+        if history.count > 3 { history.removeFirst() }
+        let count = history.count
+        func stepSpeed(_ a: (time: Double, value: Double), _ b: (time: Double, value: Double)) -> Double {
+            let dt = b.time - a.time
+            return dt > 0.001 ? (b.value - a.value) / dt : 0
+        }
+        latestStepSpeed = count >= 2 ? stepSpeed(history[count - 2], history[count - 1]) : 0
+        previousStepSpeed = count >= 3 ? stepSpeed(history[count - 3], history[count - 2]) : 0
+        speed = count >= 2 ? stepSpeed(history[0], history[count - 1]) : 0
     }
 
-    private func isReverseFlickBlocked(sign: Double, at time: Double) -> Bool {
-        lastFiredSign != 0 && sign == -lastFiredSign && time - rearmedAt < Config.Snake.reverseFlickBlock
+    /// Is the head flicking AWAY from center toward `sign`?
+    /// Fires on the two-frame average, OR one frame EARLIER when the latest frame is
+    /// already fast and the frame before was moving the same way (motion onset).
+    private func isFlick(toward sign: Double, settings: SnakeSettings) -> Bool {
+        guard settings.flickSpeed > 0 else { return false }
+        let byAverage = speed * sign >= settings.flickSpeed
+        let byOnset = latestStepSpeed * sign >= settings.flickSpeed
+            && previousStepSpeed * sign >= settings.flickSpeed * Config.Snake.flickOnsetFraction
+        return byAverage || byOnset
+    }
+
+    /// Bounce-back and double-turn protection for this axis.
+    private func blockReason(sign: Double, at time: Double) -> String? {
+        if lastFiredSign != 0, sign == -lastFiredSign, time - rearmedAt < Config.Snake.bounceBlock {
+            return "bounce-back after \(name(for: lastFiredSign)) (head swinging back)"
+        }
+        if lastFiredSign != 0, sign == lastFiredSign, time - lastFiredAt < Config.Snake.sameDirectionCooldown {
+            return "same direction again too soon (double turn)"
+        }
+        return nil
     }
 }
 
@@ -237,6 +341,18 @@ struct SnakeTurn {
     let speed: Double
 }
 
+/// A turn that wanted to fire but was held back.
+struct SnakeBlockedTurn {
+    let gesture: GestureID
+    let reason: String
+}
+
+/// What Snake did this frame.
+struct SnakeFrameResult {
+    var turn: SnakeTurn?
+    var blocked: [SnakeBlockedTurn] = []
+}
+
 /// Snake mode logic: two independent axes, at most one turn per frame.
 struct SnakeController {
     var settings: SnakeSettings
@@ -248,26 +364,28 @@ struct SnakeController {
         self.settings = settings
     }
 
-    /// Feeds one frame of head offset (your point of view). Returns a turn if one fires.
-    mutating func update(offset: PlayerHeadOffset, at time: Double) -> SnakeTurn? {
-        let canFire = time - lastTurnTime >= Config.Snake.minTurnInterval
+    /// Feeds one frame of head offset (your point of view).
+    mutating func update(offset: PlayerHeadOffset, at time: Double) -> SnakeFrameResult {
+        let tooSoon = time - lastTurnTime < Config.Snake.minTurnInterval
+            ? "too soon after the last turn"
+            : nil
 
         // Give the axis you're moving more a chance to fire first.
         let horizontalFirst = activity(offset.left, speed: horizontal.speed)
             >= activity(offset.up, speed: vertical.speed)
 
-        var turn: SnakeTurn?
+        var result = SnakeFrameResult()
         if horizontalFirst {
-            turn = updateHorizontal(offset.left, at: time, allowFire: canFire)
-            let other = updateVertical(offset.up, at: time, allowFire: canFire && turn == nil)
-            turn = turn ?? other
+            handle(updateHorizontal(offset.left, at: time, globalBlock: tooSoon), into: &result)
+            let sameMoment = result.turn.map { "\(Self.name(of: $0.gesture)) fired at the same moment" }
+            handle(updateVertical(offset.up, at: time, globalBlock: tooSoon ?? sameMoment), into: &result)
         } else {
-            turn = updateVertical(offset.up, at: time, allowFire: canFire)
-            let other = updateHorizontal(offset.left, at: time, allowFire: canFire && turn == nil)
-            turn = turn ?? other
+            handle(updateVertical(offset.up, at: time, globalBlock: tooSoon), into: &result)
+            let sameMoment = result.turn.map { "\(Self.name(of: $0.gesture)) fired at the same moment" }
+            handle(updateHorizontal(offset.left, at: time, globalBlock: tooSoon ?? sameMoment), into: &result)
         }
-        if turn != nil { lastTurnTime = time }
-        return turn
+        if result.turn != nil { lastTurnTime = time }
+        return result
     }
 
     mutating func requireReturn() {
@@ -280,11 +398,22 @@ struct SnakeController {
         vertical.arm()
     }
 
-    var isHolding: Bool {
-        if case .holding = horizontal.phase { return true }
-        if case .holding = vertical.phase { return true }
-        return false
+    var isHolding: Bool { horizontal.isHolding || vertical.isHolding }
+    var bothArmed: Bool { horizontal.isArmed && vertical.isArmed }
+
+    static func name(of gesture: GestureID) -> String {
+        switch gesture {
+        case .turnLeft: return "LEFT"
+        case .turnRight: return "RIGHT"
+        case .tiltUp: return "UP"
+        case .tiltDown: return "DOWN"
+        case .mouthOpen, .eyebrowsRaise: return gesture.displayName
+        }
     }
+
+    // MARK: Private
+
+    private enum Axis { case horizontal, vertical }
 
     /// How "active" an axis is, compared with what it takes to fire.
     private func activity(_ value: Double, speed: Double) -> Double {
@@ -293,21 +422,37 @@ struct SnakeController {
         return max(byPosition, bySpeed)
     }
 
-    private mutating func updateHorizontal(_ value: Double, at time: Double, allowFire: Bool) -> SnakeTurn? {
-        guard let fired = horizontal.update(value: value, at: time, settings: settings, allowFire: allowFire) else {
+    private mutating func updateHorizontal(_ value: Double, at time: Double,
+                                           globalBlock: String?) -> (SnakeAxisResult, Axis, Double)? {
+        guard let result = horizontal.update(value: value, at: time, settings: settings, globalBlock: globalBlock) else {
             return nil
         }
-        return SnakeTurn(gesture: fired.sign > 0 ? .turnLeft : .turnRight,
-                         viaFlick: fired.viaFlick,
-                         speed: abs(horizontal.speed))
+        return (result, .horizontal, abs(horizontal.speed))
     }
 
-    private mutating func updateVertical(_ value: Double, at time: Double, allowFire: Bool) -> SnakeTurn? {
-        guard let fired = vertical.update(value: value, at: time, settings: settings, allowFire: allowFire) else {
+    private mutating func updateVertical(_ value: Double, at time: Double,
+                                         globalBlock: String?) -> (SnakeAxisResult, Axis, Double)? {
+        guard let result = vertical.update(value: value, at: time, settings: settings, globalBlock: globalBlock) else {
             return nil
         }
-        return SnakeTurn(gesture: fired.sign > 0 ? .tiltUp : .tiltDown,
-                         viaFlick: fired.viaFlick,
-                         speed: abs(vertical.speed))
+        return (result, .vertical, abs(vertical.speed))
+    }
+
+    private func handle(_ update: (SnakeAxisResult, Axis, Double)?, into result: inout SnakeFrameResult) {
+        guard let update = update else { return }
+        let (axisResult, axis, speed) = update
+        switch axisResult {
+        case .fired(let sign, let viaFlick):
+            result.turn = SnakeTurn(gesture: Self.gesture(axis: axis, sign: sign), viaFlick: viaFlick, speed: speed)
+        case .blocked(let sign, let reason):
+            result.blocked.append(SnakeBlockedTurn(gesture: Self.gesture(axis: axis, sign: sign), reason: reason))
+        }
+    }
+
+    private static func gesture(axis: Axis, sign: Double) -> GestureID {
+        switch axis {
+        case .horizontal: return sign > 0 ? .turnLeft : .turnRight
+        case .vertical: return sign > 0 ? .tiltUp : .tiltDown
+        }
     }
 }

@@ -21,6 +21,18 @@ struct GestureSnapshot: Identifiable {
     var id: GestureID { gesture }
 }
 
+/// One line of the Snake Turn log.
+struct TurnLogEntry: Identifiable {
+    let id: Int
+    /// e.g. "12:01:33.482"
+    let time: String
+    /// e.g. "LEFT by flick (85°/s)" or "RIGHT blocked: bounce-back after LEFT"
+    let text: String
+    let fired: Bool
+    /// Camera frame → key event, for turns that fired.
+    let latencyMs: Double?
+}
+
 /// Snake mode's live state, for the Snake tuning panel.
 struct SnakeStatus {
     /// Why nothing can fire at all right now (control off, no face...), nil if nothing blocks.
@@ -40,9 +52,9 @@ struct SnakeStatus {
     var averageTurnLatencyMs: Double?
     var turnCount = 0
     var flickTurnCount = 0
-    /// How far auto-recenter has moved your neutral since the last calibration/recenter.
-    var driftShiftDegrees: Double = 0
-    var driftActive = false
+    var blockedCount = 0
+    /// Newest first.
+    var turnLog: [TurnLogEntry] = []
 }
 
 /// A copy of everything the debug window shows, taken on the tracking queue and
@@ -63,8 +75,12 @@ struct EngineSnapshot {
     var rawAngles: HeadAngles?
     /// Smoothed angles minus your neutral position (degrees, camera's view).
     var relativeAngles: HeadAngles?
-    /// Head offset from YOUR point of view (what the direction pad shows).
+    /// Head offset from YOUR point of view, measured from the current center.
     var playerOffset: PlayerHeadOffset?
+    /// Where the (floating) center is now, compared with your last calibration or
+    /// recenter, from YOUR point of view. The Direction pad draws it as a ring.
+    var centerShift: PlayerHeadOffset?
+    var floatingCenter = FloatingCenterStatus()
     /// Smoothed mouth/eyebrow values (absolute, before subtracting neutral).
     var expressions: ExpressionValues?
     /// Whether the camera frames are mirrored (we correct for it automatically).

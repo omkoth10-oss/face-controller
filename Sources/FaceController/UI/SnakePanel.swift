@@ -97,7 +97,7 @@ struct SnakePanel: View {
             Text("Frame → key: last \(DisplayFormat.milliseconds(status.lastTurnLatencyMs)), average \(DisplayFormat.milliseconds(status.averageTurnLatencyMs))")
                 .font(.caption)
                 .monospacedDigit()
-            Text("Turns: \(status.turnCount) (\(status.flickTurnCount) by flick)")
+            Text("Turns: \(status.turnCount) (\(status.flickTurnCount) by flick), \(status.blockedCount) blocked")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -112,16 +112,6 @@ struct SnakePanel: View {
             set: { newValue in
                 var updated = model.snakeSettings
                 updated[keyPath: keyPath] = newValue
-                controller.setSnakeSettings(updated)
-            })
-    }
-
-    private var driftBinding: Binding<Bool> {
-        Binding(
-            get: { model.snakeSettings.driftCorrection },
-            set: { newValue in
-                var updated = model.snakeSettings
-                updated.driftCorrection = newValue
                 controller.setSnakeSettings(updated)
             })
     }
@@ -150,16 +140,10 @@ struct SnakePanel: View {
                       value: setting(\.flickSpeed), range: Config.Snake.flickSpeedRange, step: 5,
                       text: settings.flickSpeed < 1 ? "off" : String(format: "%.0f°/s", settings.flickSpeed),
                       help: "A quick head flick this fast fires right away. Lower = gentler flicks count. 0 = off.")
-            Toggle(isOn: driftBinding) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Auto-recenter when still (drift correction)")
-                    Text(status.driftActive
-                         ? String(format: "following your posture… (moved %.1f° since last recenter)", status.driftShiftDegrees)
-                         : String(format: "moved %.1f° since last recenter/calibration", status.driftShiftDegrees))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
+            Text("The center following your head (auto-recenter) is now the Floating center setting in the middle column.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

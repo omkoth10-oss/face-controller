@@ -5,8 +5,15 @@ import SwiftUI
 /// The dot moves like your head: turn to your left and it goes left, tilt up and
 /// it goes up. If it ever moves the opposite way, the direction is wrong for this
 /// camera: flip it in Config.Directions.
+///
+/// The grey cross is your calibrated (or last recentered) center. The purple ring is
+/// the FLOATING center: where moves are measured from right now. The dashed box
+/// (where things fire) moves with the ring.
 struct DirectionPad: View {
+    /// Head offset measured from the current (floating) center.
     let offset: PlayerHeadOffset?
+    /// Where the floating center is, compared with the calibrated center.
+    let centerShift: PlayerHeadOffset?
     let mode: ControlMode
     /// Snake's live press threshold (from its slider).
     let snakePressDegrees: Double
@@ -43,9 +50,16 @@ struct DirectionPad: View {
                 Rectangle()
                     .fill(Color.gray.opacity(0.35))
                     .frame(width: size, height: 1)
+                // Trigger box around the floating center.
                 Rectangle()
                     .stroke(Color.orange.opacity(0.8), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .frame(width: scaled(boxHalfWidth) * 2, height: scaled(boxHalfHeight) * 2)
+                    .offset(x: clamped(-shift.left), y: clamped(-shift.up))
+                // The floating center itself.
+                Circle()
+                    .stroke(Color.purple, lineWidth: 2)
+                    .frame(width: 20, height: 20)
+                    .offset(x: clamped(-shift.left), y: clamped(-shift.up))
 
                 label("UP", lit: isUp).offset(y: -size / 2 + 10)
                 label("DOWN", lit: isDown).offset(y: size / 2 - 10)
@@ -57,13 +71,18 @@ struct DirectionPad: View {
                         .fill(isCentered ? Color.blue : Color.green)
                         .frame(width: 14, height: 14)
                         // Your left = screen left (negative x); up = screen up (negative y).
-                        .offset(x: clamped(-offset.left), y: clamped(-offset.up))
+                        // Drawn relative to the calibrated cross: center shift + offset.
+                        .offset(x: clamped(-(shift.left + offset.left)), y: clamped(-(shift.up + offset.up)))
                 }
             }
             .frame(width: size, height: size)
 
             Text(directionText)
                 .font(.headline)
+            Text(String(format: "Purple ring = floating center (%.1f° from the grey cross)",
+                        (shift.left * shift.left + shift.up * shift.up).squareRoot()))
+                .font(.caption)
+                .foregroundColor(.purple)
             Text("Should match YOUR head. Backwards? Set flipHorizontal / flipVertical in Config.swift.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -73,6 +92,8 @@ struct DirectionPad: View {
     }
 
     // MARK: - Direction logic
+
+    private var shift: PlayerHeadOffset { centerShift ?? PlayerHeadOffset(left: 0, up: 0) }
 
     private var isLeft: Bool { (offset?.left ?? 0) > boxHalfWidth }
     private var isRight: Bool { (offset?.left ?? 0) < -boxHalfWidth }

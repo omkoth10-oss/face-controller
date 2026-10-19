@@ -20,7 +20,7 @@ struct DebugView: View {
                         preview
                         cameraInfo
                         GroupBox(label: Text("Direction (your point of view)")) {
-                            DirectionPad(offset: snap.playerOffset, mode: snap.mode,
+                            DirectionPad(offset: snap.playerOffset, centerShift: snap.centerShift, mode: snap.mode,
                                          snakePressDegrees: model.snakeSettings.pressDegrees)
                                 .frame(maxWidth: .infinity)
                         }
@@ -33,11 +33,15 @@ struct DebugView: View {
                         controlBox
                         modeBox
                         calibrationBox
+                        FloatingCenterBox(model: model, controller: controller)
                         GroupBox(label: Text("Gestures")) {
                             GestureTable(gestures: snap.gestures,
                                          mode: snap.mode,
                                          isSnake: snap.mode == .snake)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if snap.mode == .snake {
+                            TurnLogView(entries: snap.snake.turnLog)
                         }
                     }
                     .frame(width: 500)

@@ -37,8 +37,9 @@ final class ControlEngine {
     /// Latest value of every gesture (relative to neutral), for the debug window.
     private var latestValues: [GestureID: Double] = [:]
     private var lastTapAt: [GestureID: Double] = [:]
-    /// Neutral head angles: set by calibration, then moved by Recenter and (in Snake
-    /// mode) drift correction. `neutralAnchor` is where it was last set on purpose.
+    /// Neutral head angles (the CENTER): set by calibration, then moved by Recenter
+    /// and by the floating center. `neutralAnchor` is where it was last set on purpose
+    /// (calibration or recenter), so we can show how far the center has floated.
     private var neutralAngles: HeadAngles?
     private var neutralAnchor: HeadAngles?
     private var lastSmoothedAngles: HeadAngles?
@@ -50,8 +51,15 @@ final class ControlEngine {
     private var snakeStatus = SnakeStatus()
     private var snakeLatencies = RollingAverage()
     private var lastSnakeTurnAt: Double?
-    private var lastDriftUpdate: Double?
-    private var driftActive = false
+    private var turnLogCounter = 0
+    /// Snake: an attempted turn while input is blocked was already logged.
+    private var blockedByInputLogged = false
+
+    // Floating center (see FloatingCenter.swift).
+    private var floatingCenter = FloatingCenter()
+    private var floatingSettings = FloatingCenterSettings()
+    /// When a HEAD direction last fired or released; the center waits a moment after.
+    private var lastHeadOutputAt = -Double.infinity
     private var framesMirrored = false
     private var aimState = AimState()
 
@@ -75,6 +83,13 @@ final class ControlEngine {
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    /// With milliseconds, for the Turn log.
+    private static let preciseTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
     }()
 
@@ -123,6 +138,7 @@ final class ControlEngine {
             self.lastTapAt.removeAll()
             self.snake.requireReturn()
             self.snakeFilter.reset()
+            self.floatingCenter.reset()
             self.logEvent("Mode: \(newMode.title) (everything released)")
             self.publish(force: true)
         }
@@ -145,6 +161,15 @@ final class ControlEngine {
         }
     }
 
+    /// New Floating center settings (per-mode on/off, follow time).
+    func setFloatingCenterSettings(_ settings: FloatingCenterSettings) {
+        queue.async {
+            self.floatingSettings = settings
+            self.floatingCenter.reset()
+            self.publish(force: true)
+        }
+    }
+
     /// RECENTER: "where my head is right now" becomes neutral, instantly.
     /// (Calibration takes 3 seconds and also re-measures the mouth/eyebrows;
     /// recenter only moves the head's neutral.) Releases everything first.
@@ -161,6 +186,7 @@ final class ControlEngine {
             self.neutralAngles = current
             self.neutralAnchor = current
             self.snakeFilter.reset()
+            self.floatingCenter.reset()
             self.resetAllGestures(requireNeutral: true)
             self.snake.arm()  // Your head IS the center now, so Snake is ready at once.
             self.logEvent("Recentered: where your head is now is the new neutral")
@@ -312,19 +338,25 @@ final class ControlEngine {
             resetAllGestures(requireNeutral: true)
             aim.stopMoving()
             aimState = AimState(active: mode.headMovesMouse, sensitivity: aim.currentSensitivity)
+            floatingCenter.markOff("paused: \(input.currentBlockReasons.first?.rawValue ?? "input blocked")")
+            if mode == .snake { logSnakeAttemptWhileBlocked(offset) }
             return
         }
+        blockedByInputLogged = false
 
         switch mode {
         case .keys, .aim:
             runHoldGestures(values: values, timing: timing)
         case .snake:
-            runSnake(offset: offset, smoothedAngles: smoothedAngles, timing: timing)
+            runSnake(offset: offset, timing: timing)
         }
 
         if mode.headMovesMouse {
             aimState = aim.update(offset: offset, at: now)
         }
+
+        // Last: let the center follow your head if it's resting (never while busy).
+        updateFloatingCenter(offset: offset, smoothedAngles: smoothedAngles, now: now)
     }
 
     private func handleNoFace(at now: Double, anglesMissing: Bool) {
@@ -348,6 +380,7 @@ final class ControlEngine {
         aim.stopMoving()
         aimState.speedX = 0
         aimState.speedY = 0
+        floatingCenter.reset()
         enforceFaceLostRule(now: now)
     }
 
@@ -372,6 +405,7 @@ final class ControlEngine {
 
             guard let event = detector.update(value: value, at: now) else { continue }
             changed = true
+            if gesture.isHeadGesture { lastHeadOutputAt = now }
 
             switch event {
             case .press:
@@ -396,66 +430,132 @@ final class ControlEngine {
     }
 
     /// Snake mode: one arrow-key TAP per turn. The rules live in SnakeController.
-    private func runSnake(offset: PlayerHeadOffset, smoothedAngles: HeadAngles, timing: FrameTiming) {
+    private func runSnake(offset: PlayerHeadOffset, timing: FrameTiming) {
         let now = timing.arrival
+        let result = snake.update(offset: offset, at: now)
 
-        if let turn = snake.update(offset: offset, at: now), let binding = mode.bindings[turn.gesture] {
+        for blocked in result.blocked {
+            snakeStatus.blockedCount += 1
+            addTurnLog("\(SnakeController.name(of: blocked.gesture)) blocked: \(blocked.reason)",
+                       fired: false, latencyMs: nil)
+        }
+
+        if let turn = result.turn, let binding = mode.bindings[turn.gesture] {
+            let name = SnakeController.name(of: turn.gesture)
             if input.tap(binding.action, duration: Config.Snake.tapDuration) {
                 recordOutputEvent(timing: timing)
-                if let latency = snapshot.lastOutputLatencyMs {
+                let latency = snapshot.lastOutputLatencyMs
+                if let latency = latency {
                     snakeLatencies.add(latency)
                     snakeStatus.lastTurnLatencyMs = latency
                 }
                 lastTapAt[turn.gesture] = now
                 lastSnakeTurnAt = now
+                lastHeadOutputAt = now
                 snakeStatus.turnCount += 1
-                let name = Self.snakeDirectionName(turn.gesture)
-                if turn.viaFlick {
-                    snakeStatus.flickTurnCount += 1
-                    snakeStatus.lastTurn = "\(name) by flick (\(Int(turn.speed))°/s)"
-                } else {
-                    snakeStatus.lastTurn = "\(name) by position"
-                }
+                let how = turn.viaFlick ? "by flick (\(Int(turn.speed))°/s)" : "by position"
+                if turn.viaFlick { snakeStatus.flickTurnCount += 1 }
+                snakeStatus.lastTurn = "\(name) \(how)"
+                addTurnLog("\(name) \(how)", fired: true, latencyMs: latency)
+            } else {
+                addTurnLog("\(name) not sent: input blocked", fired: false, latencyMs: nil)
             }
+        }
+
+        if result.turn != nil || !result.blocked.isEmpty {
             publish(force: true)
         }
-
-        applyDriftCorrection(offset: offset, smoothedAngles: smoothedAngles, at: now)
     }
 
-    /// DRIFT CORRECTION: while your head rests still near the center, slowly move
-    /// "neutral" toward where your head actually is. Posture changes (slouching,
-    /// leaning) then can't build up until a turn fires by itself or never re-arms.
-    /// It only acts inside a small zone around the center, so real turns aren't eaten.
-    private func applyDriftCorrection(offset: PlayerHeadOffset, smoothedAngles: HeadAngles, at now: Double) {
-        defer { lastDriftUpdate = now }
-        driftActive = false
-        guard snake.settings.driftCorrection, var neutral = neutralAngles, let last = lastDriftUpdate else { return }
-
-        let zone = Config.Snake.driftZoneDegrees
-        let stillSpeed = Config.Snake.driftStillSpeed
-        guard abs(offset.left) < zone, abs(offset.up) < zone,
-              abs(snake.horizontal.speed) < stillSpeed, abs(snake.vertical.speed) < stillSpeed,
-              !snake.isHolding else { return }
-
-        // Move a small step toward the current head position (time constant ~2 s).
-        let dt = min(max(now - last, 0), 0.1)
-        let step = dt / Config.Snake.driftTimeConstant
-        neutral.pitch += (smoothedAngles.pitch - neutral.pitch) * step
-        neutral.yaw += (smoothedAngles.yaw - neutral.yaw) * step
-        neutral.roll += (smoothedAngles.roll - neutral.roll) * step
-        neutralAngles = neutral
-        driftActive = true
-    }
-
-    private static func snakeDirectionName(_ gesture: GestureID) -> String {
-        switch gesture {
-        case .turnLeft: return "LEFT"
-        case .turnRight: return "RIGHT"
-        case .tiltUp: return "UP"
-        case .tiltDown: return "DOWN"
-        case .mouthOpen, .eyebrowsRaise: return gesture.displayName
+    /// While input is blocked (e.g. control OFF), log ONE line when you try to turn,
+    /// so a "dead" game is easy to explain.
+    private func logSnakeAttemptWhileBlocked(_ offset: PlayerHeadOffset) {
+        let press = snake.settings.pressDegrees
+        let biggest = max(abs(offset.left), abs(offset.up))
+        if biggest >= press, !blockedByInputLogged {
+            blockedByInputLogged = true
+            let gesture: GestureID = abs(offset.left) >= abs(offset.up)
+                ? (offset.left > 0 ? .turnLeft : .turnRight)
+                : (offset.up > 0 ? .tiltUp : .tiltDown)
+            let reason = input.currentBlockReasons.first?.rawValue ?? "input blocked"
+            snakeStatus.blockedCount += 1
+            addTurnLog("\(SnakeController.name(of: gesture)) ignored: \(reason)", fired: false, latencyMs: nil)
+            publish(force: true)
+        } else if biggest < snake.settings.rearmDegrees {
+            blockedByInputLogged = false
         }
+    }
+
+    private func addTurnLog(_ text: String, fired: Bool, latencyMs: Double?) {
+        turnLogCounter += 1
+        let entry = TurnLogEntry(id: turnLogCounter,
+                                 time: Self.preciseTimeFormatter.string(from: Date()),
+                                 text: text,
+                                 fired: fired,
+                                 latencyMs: latencyMs)
+        snakeStatus.turnLog.insert(entry, at: 0)
+        if snakeStatus.turnLog.count > Config.Snake.turnLogLength {
+            snakeStatus.turnLog.removeLast(snakeStatus.turnLog.count - Config.Snake.turnLogLength)
+        }
+    }
+
+    // MARK: - Floating center
+
+    private func updateFloatingCenter(offset: PlayerHeadOffset, smoothedAngles: HeadAngles, now: Double) {
+        guard floatingSettings.isEnabled(for: mode) else {
+            floatingCenter.markOff("off in \(mode.title) mode")
+            return
+        }
+        guard var neutral = neutralAngles else { return }
+        floatingCenter.update(neutral: &neutral,
+                              head: smoothedAngles,
+                              offset: offset,
+                              zone: floatingCenterZone(),
+                              busyReason: floatingCenterBusyReason(now: now),
+                              followTime: floatingSettings.followTime,
+                              at: now)
+        neutralAngles = neutral
+    }
+
+    /// How close to the center counts as "resting near center" in this mode.
+    /// Always well inside where anything fires, so moving the center can't trigger.
+    private func floatingCenterZone() -> Double {
+        switch mode {
+        case .keys:
+            let presses = GestureID.allCases
+                .filter { $0.isHeadGesture && mode.bindings[$0] != nil }
+                .map { $0.thresholds.press }
+            return (presses.min() ?? Config.Gestures.tiltUp.press) * Config.FloatingCenter.keysZoneFraction
+        case .aim:
+            // Inside the deadzone, so the pointer never moves while the center follows.
+            return min(Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone)
+        case .snake:
+            return snake.settings.rearmDegrees
+        }
+    }
+
+    /// Non-nil when the center must NOT move: something is firing, held or moving.
+    private func floatingCenterBusyReason(now: Double) -> String? {
+        if now - lastHeadOutputAt < Config.FloatingCenter.pauseAfterOutput {
+            return "a direction just fired"
+        }
+        switch mode {
+        case .keys:
+            for gesture in GestureID.allCases where gesture.isHeadGesture {
+                guard let binding = mode.bindings[gesture], let detector = gestures[gesture] else { continue }
+                switch detector.phase {
+                case .active: return "\(binding.label) held"
+                case .holding: return "\(binding.label) about to fire"
+                case .ready, .waitingForNeutral: continue
+                }
+            }
+        case .aim:
+            if aimState.speedX != 0 || aimState.speedY != 0 { return "pointer moving" }
+        case .snake:
+            if snake.isHolding { return "a turn is about to fire" }
+            if !snake.bothArmed { return "a direction is re-arming" }
+        }
+        return nil
     }
 
     /// Latency = time from the camera capturing the frame to the event being sent.
@@ -508,6 +608,7 @@ final class ControlEngine {
         neutralAngles = result.neutral
         neutralAnchor = result.neutral
         snakeFilter.reset()
+        floatingCenter.reset()
         resetAllGestures(requireNeutral: true)
         snapshot.calibration = .done(result)
         input.setBlocked(.calibrating, false)
@@ -602,6 +703,17 @@ final class ControlEngine {
         if mode == .snake {
             snapshot.snake = makeSnakeStatus(now: now)
         }
+        var floating = FloatingCenterStatus(enabled: floatingSettings.isEnabled(for: mode),
+                                            state: floatingCenter.state,
+                                            isFollowing: floatingCenter.isFollowing)
+        if let neutral = neutralAngles, let anchor = neutralAnchor {
+            let shift = PlayerDirections.offset(relative: neutral - anchor, framesMirrored: framesMirrored)
+            snapshot.centerShift = shift
+            floating.shiftDegrees = hypot(shift.left, shift.up)
+        } else {
+            snapshot.centerShift = nil
+        }
+        snapshot.floatingCenter = floating
         snapshot.aim = mode.headMovesMouse ? aimState : AimState(sensitivity: aim.currentSensitivity)
         snapshot.gestures = GestureID.allCases.map { gesture in
             let binding = mode.bindings[gesture]
@@ -651,10 +763,6 @@ final class ControlEngine {
         status.verticalSpeed = snake.vertical.speed
         status.secondsSinceLastTurn = lastSnakeTurnAt.map { now - $0 }
         status.averageTurnLatencyMs = snakeLatencies.average
-        status.driftActive = driftActive
-        if let neutral = neutralAngles, let anchor = neutralAnchor {
-            status.driftShiftDegrees = hypot(neutral.pitch - anchor.pitch, neutral.yaw - anchor.yaw)
-        }
         return status
     }
 

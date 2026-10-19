@@ -16,6 +16,8 @@ final class DebugModel: ObservableObject {
     @Published var aimSensitivity = Config.Aim.defaultSensitivity
     /// Your Snake slider values (loaded from the last launch).
     @Published var snakeSettings = SnakeSettings.load()
+    /// Floating center on/off per mode + follow time (loaded from the last launch).
+    @Published var floatingCenterSettings = FloatingCenterSettings.load()
     @Published var recenterHotKeyRegistered = false
 }
 
@@ -73,6 +75,7 @@ final class AppController {
             }
         }
         engine.setSnakeSettings(model.snakeSettings)
+        engine.setFloatingCenterSettings(model.floatingCenterSettings)
         engine.start()
 
         registerKillSwitch()
@@ -151,6 +154,15 @@ final class AppController {
 
     func resetSnakeSettings() {
         setSnakeSettings(SnakeSettings())
+    }
+
+    /// Floating center changes (per-mode switch, follow time): used now and saved.
+    func setFloatingCenterSettings(_ settings: FloatingCenterSettings) {
+        let clamped = settings.clamped()
+        guard clamped != model.floatingCenterSettings else { return }
+        model.floatingCenterSettings = clamped
+        clamped.save()
+        engine.setFloatingCenterSettings(clamped)
     }
 
     private func registerKillSwitch() {
