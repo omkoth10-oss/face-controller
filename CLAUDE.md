@@ -215,6 +215,8 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-19: **Snake round 5 built (code only; compiles on macOS CI, not yet tested on the Mac).** Likely causes: big fast moves swing back past center (a small opposite flick fires), and a fast move on one axis leaks into the other (flicks fire at only 1.5°). Added the extra-turn guard (on by default, toggle): during a swing-back or while the other axis moves faster, a flick must reach the full press threshold; small ones that stop short are logged in orange. Turn log adds "head went to N°" per turn; false "not re-armed yet" alarms removed. Checked with a Python port of the axis logic on simulated head motion: small swing-backs and leaks are now ignored; right → down → left, a U-turn (right, up, left), a diagonal and a deliberate left → right still fire every turn with no added delay at 30 fps.
 
+- 2026-10-19: Owner: **Google Snake "looks great"** after the latest fixes. Snake milestone done. Next: lock in his slider values as defaults, record a demo clip, then Phase 3.
+
 ## Next Steps
 - Owner re-tests **Google Snake** (TESTING.md 7): do unwanted extra turns still happen (screenshot the Turn log right after one)? Were any orange "IGNORED" lines real turns? Typical "head went to N°". Fast combos and diagonals should still all be ✓. Best score, copied values, frame→key average.
 - Owner tests the **floating center** (TESTING.md 1b) in Keys/Aim: held A/D/Space must never release by itself; nothing may fire after resting in a new spot; best Follow time.
