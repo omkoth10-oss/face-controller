@@ -96,10 +96,12 @@ and run `swift run` again.
   **Sensitivity** slider to adjust speed.
 - **Snake mode:** each head turn/tilt, or a quick **flick**, sends one arrow-key
   tap. After a turn, that direction's axis re-arms as soon as you come partway
-  back (the other axis stays ready, so you can chain "left, then up"). Turns
-  that would come from your head swinging back past the center ("bounce-back")
-  and accidental double turns are blocked. The **Turn log** lists every turn and
-  every blocked turn with the reason. All of it is tunable live with sliders in
+  back (the other axis stays ready, so you can chain "left, then up"). Fast
+  combos and diagonals send every turn: turns that come very close together are
+  spaced a few ms apart, never dropped. Optional bounce-back and double-turn
+  blocks can be switched on in the Snake panel (off by default; Google Snake
+  ignores reversals and repeats itself). The **Turn log** lists every turn, and
+  shows in red any turn that didn't go through, with the reason. All of it is tunable live with sliders in
   the **Snake tuning** panel; your values are saved between launches. See
   TESTING.md for a tuning guide.
 - Switching mode releases everything first.
@@ -196,9 +198,11 @@ its label.
 | `Aim.curveExponent` | 1.8 | Response curve: 1 = straight line; higher = slower and more precise near the center. |
 | `Aim.smoothingTime` | 0.05 s | Eases speed changes between camera frames. 0 = none. |
 | `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed). Normally just use the sliders. |
-| `Snake.bounceBlock` | 0.35 s | After re-arming, ignore turns the opposite way on that axis for this long (the swing back). |
-| `Snake.sameDirectionCooldown` | 0.25 s | The same direction can't fire twice within this time (double turns). |
-| `Snake.minTurnInterval` | 0.10 s | At most one turn per this many seconds. |
+| `Snake.defaultMinTurnInterval` | 45 ms | Starting value of the "Min time between turns" slider. Turns closer than this are sent a little later, never dropped. |
+| `Snake.defaultBounceBlockEnabled` / `defaultSameDirectionBlockEnabled` | off / off | Starting state of the two optional block switches in the Snake panel. |
+| `Snake.bounceBlock` | 0.35 s | When the bounce-back block is ON: after re-arming, ignore turns the opposite way on that axis for this long. |
+| `Snake.sameDirectionCooldown` | 0.25 s | When the double-turn block is ON: the same direction can't fire twice within this time. |
+| `FloatingCenter.snakeZoneFraction` / `snakePauseAfterTurn` | 0.5 / 0.8 s | Snake: the center only follows within half the re-arm zone, and waits this long after each turn. |
 | `Snake.flickMinFraction` / `flickOnsetFraction` | 0.3 / 0.5 | How far out a flick must be (fraction of press), and how "early" a flick may fire. |
 | `FloatingCenter.defaultEnabled` / `defaultFollowTime` | on / 2 s | Starting values of the Floating center switch and slider (your values are saved). |
 | `FloatingCenter.stillSpeed` / `restDwell` | 15°/s / 0.25 s | How still, and for how long, your head must rest before the center follows. |

@@ -175,19 +175,22 @@ near the center; did it work in a game (which); jittery or smooth?
 
 ## 7. Google Snake (15 min)
 
-**What changed since your last test:**
-- The **floating center** (section 1b) replaces Snake's old auto-recenter, and is on
-  by default. In Snake it only follows while BOTH directions are ready (green
-  dots) and your head is inside the re-arm zone, so it can't eat a turn.
-- New **Turn log** (middle column, under Gestures): every turn with its time and
-  frame → key latency, and every turn that was held back, with the reason.
-- **Bounce-back block:** right after a direction re-arms, a turn the opposite
-  way on that axis (your head swinging back past the center) is ignored for
-  0.35 s. It shows in the log as "blocked: bounce-back after LEFT".
-- **Double-turn block:** the same direction can't fire twice within 0.25 s.
-- **Earlier flicks:** a flick can fire one camera frame sooner (as soon as the
-  movement clearly starts).
-- Your saved slider values carry over.
+**What changed since your last test (round 4: "fast turns don't fire"):**
+- The **bounce-back** and **double-turn** blocks are now **OFF** by default.
+  They were eating real fast turns (e.g. right → down → left blocked "left").
+  Google Snake ignores a turn straight back and a repeat of your direction by
+  itself, so extra taps are harmless. Switches for both are in the Snake panel
+  if you want them back.
+- **Min time between turns** is a slider (default 45 ms), and a turn that comes
+  too soon is now **sent a few ms later instead of dropped**.
+- **Fast diagonals fire both turns**: e.g. left and up at the same moment send
+  LEFT, then UP 45 ms later.
+- The **floating center** in Snake only follows when your head is really back at
+  center (half the re-arm zone) and waits 0.8 s after every turn, so it can't
+  creep toward a turn you're still holding or returning from.
+- **Turn log:** turns that did NOT go through are **red** with the exact reason
+  (easy to screenshot).
+- Your saved slider values carry over (the two new switches start off).
 
 ### Setup
 
@@ -207,9 +210,14 @@ near the center; did it work in a game (which); jittery or smooth?
       exactly why (e.g. "waiting: left/right still at 4.2° toward LEFT, needs
       < 2.3° to re-arm").
 - [ ] Watch the **Turn log** while you play. Every turn you meant should be a
-      ✓ line. Every ✗ line says why a turn was held back. Note which reasons show up.
-- [ ] Turn left and come back to center quickly: you should NOT get a RIGHT turn
-      (a "bounce-back" ✗ line is fine; it means the block worked).
+      ✓ line. A **red** line is a turn that didn't go through, with the reason.
+      With the default settings there should be very few red lines.
+- [ ] **Fast combos:** right → down → left quickly, and up → left → down quickly.
+      Every step should be a ✓ (some may say "sent N ms later": that's fine).
+- [ ] **Fast diagonal:** move left and up at the same time. You should get two ✓
+      lines (LEFT and UP, or UP and LEFT).
+- [ ] Hold a turn (head turned left) for 2 s, then do the next turn: it should
+      not need any extra movement (the purple ring stays put while you're turned).
 - [ ] Rest still for a few seconds: the purple ring on the Direction pad follows,
       and nothing fires.
 - [ ] Play 5 games. Note your best score.
@@ -226,8 +234,9 @@ Change **one slider at a time**, play a game, and keep it if it's better.
 | Double turns / a turn on the way back | Lower **Re-arm** (e.g. 35%), raise **Flick speed**, or raise **Hold time** a little. |
 | Random turns while sitting still | Raise **Smoothing** (e.g. 40%) or **Press threshold**; make sure the Floating center is on; press Recenter. |
 | Center seems to wander off | Press Recenter. Try a slower **Follow time** (Floating center box), or turn the floating center off for Snake and compare. |
-| A turn you meant shows as ✗ "too soon" or "double turn" | You moved again very quickly. Tell me how often it happens: those limits are in `Config.Snake` (`minTurnInterval`, `sameDirectionCooldown`). |
-| ✗ "bounce-back" when you really meant to reverse | Snake can't reverse anyway, so this should be harmless. Tell me if it ever blocks a turn that would have helped. |
+| A red line "not re-armed yet" | You turned the same way twice without coming back enough in between. Raise **Re-arm** (e.g. 60%). |
+| Unwanted extra turns (e.g. a turn from swinging back) | Switch on **Block bounce-back turns** and/or **Block double turns**, and see if it helps without eating real turns (watch for red lines). |
+| Two fast turns arrive too close together for the game | Raise **Min time between turns** (e.g. 80 ms). |
 
 The **head speed** under each "Right now" line shows how fast you move: a
 deliberate flick should be well above the Flick speed, sitting still well below.
@@ -239,8 +248,9 @@ deliberate flick should be well above the Flick speed, sitting still well below.
 - Turns: total and how many by flick (Snake panel)
 - Missed turns? Double turns? Wrong-direction turns?
 - Which "Right now" message did you see most when a turn didn't fire?
-- Turn log: which ✗ reasons came up, and was any ✗ a turn you really wanted?
-- Did you still get double turns or bounce-back turns (a ✓ you didn't mean)?
+- Turn log: any red lines? Screenshot them (they show the exact reason).
+- Fast combos (right → down → left) and diagonals: did every step go through?
+- Did you get unwanted extra turns now that the blocks are off?
 
 ## 8. Quick game check (optional, 5 min)
 
@@ -284,8 +294,8 @@ Snake: best score before tuning __  after tuning __
        frame -> key avg __ ms   turns __ (by flick __)
        missed turns __  double turns __  wrong direction __
        most common "Right now" message when a turn didn't fire: __
-       Turn log ✗ reasons seen: __   any wanted turn blocked? __
-       unwanted ✓ turns (double / bounce-back)? __
+       red Turn log lines (screenshot): __   fast combos all ✓? __   diagonals both ✓? __
+       unwanted extra turns with blocks off? __
 
 What felt worst / what made you want to stop using it:
 Anything else:
