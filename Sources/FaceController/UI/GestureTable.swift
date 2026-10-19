@@ -5,7 +5,7 @@ import SwiftUI
 struct GestureTable: View {
     let gestures: [GestureSnapshot]
     let mode: ControlMode
-    let snakeWaitingForCenter: Bool
+    let isSnake: Bool
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
@@ -62,7 +62,7 @@ struct GestureTable: View {
     private func phaseText(_ phase: GesturePhase) -> String {
         switch phase {
         case .waitingForNeutral:
-            return snakeWaitingForCenter ? "center head first" : "back to neutral"
+            return isSnake ? "re-arming (come back)" : "back to neutral"
         case .ready:
             return "ready"
         case .holding(let progress):

@@ -21,6 +21,30 @@ struct GestureSnapshot: Identifiable {
     var id: GestureID { gesture }
 }
 
+/// Snake mode's live state, for the Snake tuning panel.
+struct SnakeStatus {
+    /// Why nothing can fire at all right now (control off, no face...), nil if nothing blocks.
+    var blocker: String?
+    /// Per-axis plain-language state, e.g. "waiting: left/right still at 4.2° toward LEFT, needs < 2.3° to re-arm".
+    var horizontalText = "—"
+    var verticalText = "—"
+    var horizontalArmed = false
+    var verticalArmed = false
+    /// Head speed per axis (degrees per second), handy for tuning the flick speed.
+    var horizontalSpeed: Double = 0
+    var verticalSpeed: Double = 0
+    /// e.g. "LEFT by flick (85°/s)".
+    var lastTurn: String?
+    var secondsSinceLastTurn: Double?
+    var lastTurnLatencyMs: Double?
+    var averageTurnLatencyMs: Double?
+    var turnCount = 0
+    var flickTurnCount = 0
+    /// How far auto-recenter has moved your neutral since the last calibration/recenter.
+    var driftShiftDegrees: Double = 0
+    var driftActive = false
+}
+
 /// A copy of everything the debug window shows, taken on the tracking queue and
 /// handed to the window. Because it's a plain value (a struct), the window can read
 /// it safely while the tracking loop keeps running on its own thread.
@@ -48,8 +72,8 @@ struct EngineSnapshot {
 
     // Gestures
     var gestures: [GestureSnapshot] = []
-    /// Snake mode: waiting for your head to come back to center before the next turn.
-    var snakeWaitingForCenter = false
+    /// Snake mode's live state (only filled in Snake mode).
+    var snake = SnakeStatus()
 
     // Aiming
     var aim = AimState()

@@ -20,7 +20,8 @@ struct DebugView: View {
                         preview
                         cameraInfo
                         GroupBox(label: Text("Direction (your point of view)")) {
-                            DirectionPad(offset: snap.playerOffset, mode: snap.mode)
+                            DirectionPad(offset: snap.playerOffset, mode: snap.mode,
+                                         snakePressDegrees: model.snakeSettings.pressDegrees)
                                 .frame(maxWidth: .infinity)
                         }
                         performanceBox
@@ -35,7 +36,7 @@ struct DebugView: View {
                         GroupBox(label: Text("Gestures")) {
                             GestureTable(gestures: snap.gestures,
                                          mode: snap.mode,
-                                         snakeWaitingForCenter: snap.snakeWaitingForCenter)
+                                         isSnake: snap.mode == .snake)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -43,7 +44,11 @@ struct DebugView: View {
 
                     // Column 3: aiming, raw numbers, events.
                     VStack(alignment: .leading, spacing: 10) {
-                        aimBox
+                        if snap.mode == .snake {
+                            SnakePanel(model: model, controller: controller)
+                        } else {
+                            aimBox
+                        }
                         headBox
                         eventLog
                     }
@@ -212,7 +217,7 @@ struct DebugView: View {
         case .aim:
             return "Head moves the mouse like a joystick. Space/A/D are off (head can't do both until Phase 3)."
         case .snake:
-            return "For Google Snake: each head movement taps one arrow key. Bring your head back to the center between turns. Expressions are off."
+            return "For Google Snake: each turn or quick flick of your head taps one arrow key. After a turn, that direction re-arms as soon as you come partway back. Tune it live in the Snake panel (right). Expressions are off."
         }
     }
 
@@ -230,11 +235,6 @@ struct DebugView: View {
                 Text(modeDescription)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
-                if snap.snakeWaitingForCenter {
-                    Text("Snake: bring your head back to the center to arm the next turn")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
                 Text("Switching mode releases everything.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -309,11 +309,22 @@ struct DebugView: View {
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
-                // keyboardShortcut makes the C key press this button while this window is focused.
-                Button("Recalibrate (C)") {
-                    controller.recalibrate()
+                HStack {
+                    // keyboardShortcut: the key presses this button while this window is focused.
+                    Button("Recenter now (R)") {
+                        controller.recenter()
+                    }
+                    .keyboardShortcut("r", modifiers: [])
+                    .controlSize(.large)
+                    Button("Recalibrate (C)") {
+                        controller.recalibrate()
+                    }
+                    .keyboardShortcut("c", modifiers: [])
                 }
-                .keyboardShortcut("c", modifiers: [])
+                Text("Recenter = \"where my head is now is neutral\", instantly (also \(Config.Recenter.description) from any app). Recalibrate = 3 s, also re-measures mouth and eyebrows.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

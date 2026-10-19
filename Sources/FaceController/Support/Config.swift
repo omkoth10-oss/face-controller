@@ -141,16 +141,62 @@ enum Config {
 
     // MARK: - Snake mode
 
+    /// Snake has its own fast, forgiving rules (see SnakeController.swift).
+    /// The first six values are only the STARTING values of the live sliders in the
+    /// debug window: once you move a slider, your value is saved and used instead.
+    /// ("Reset to defaults" in the window goes back to these.)
     enum Snake {
-        /// Move your head this many degrees (any direction) to send one arrow-key tap.
-        static let pressDegrees: Double = 10
-        /// After a tap, your head must come back within this many degrees of neutral
-        /// (on BOTH axes) before the next direction can fire. Prevents spamming turns.
-        static let neutralDegrees: Double = 5
-        /// Must stay past `pressDegrees` this long before the tap fires.
-        static let holdTime: Double = 0.050
-        /// How long each tap holds the key down before releasing it.
+        /// Turn/tilt this many degrees from center to fire a turn.
+        static let defaultPressDegrees: Double = 5
+        /// After a turn, that axis re-arms once your head comes back below this
+        /// fraction of the press threshold (0.45 = 45%). Only the axis that fired is checked.
+        static let defaultRearmFraction: Double = 0.45
+        /// Stay past the press threshold this long before a turn fires (flicks skip this).
+        static let defaultHoldTime: Double = 0.030
+        /// 0 = no smoothing (fastest, most jitter), 1 = heavy smoothing (slowest).
+        static let defaultSmoothing: Double = 0.3
+        /// A quick head flick at least this fast (degrees per second) fires a turn
+        /// right away, before you reach the press threshold. 0 = flicks off.
+        static let defaultFlickSpeed: Double = 60
+        /// Slowly follow your posture while your head rests still near center.
+        static let defaultDriftCorrection = true
+
+        /// Slider ranges.
+        static let pressRange: ClosedRange<Double> = 2...12
+        static let rearmRange: ClosedRange<Double> = 0.2...0.8
+        static let holdRange: ClosedRange<Double> = 0...0.15
+        static let smoothingRange: ClosedRange<Double> = 0...1
+        static let flickSpeedRange: ClosedRange<Double> = 0...200
+
+        /// A flick only counts once the head is at least this fraction of the press
+        /// threshold away from center (ignores tiny twitches).
+        static let flickMinFraction: Double = 0.4
+        /// Right after an axis re-arms, a flick in the OPPOSITE direction is ignored
+        /// for this long. Stops the swing back to center from firing the other way.
+        static let reverseFlickBlock: Double = 0.25
+        /// At most one turn per this many seconds (stops one diagonal move from
+        /// firing two turns at once).
+        static let minTurnInterval: Double = 0.10
+        /// How long each tap holds the arrow key down before releasing it.
         static let tapDuration: Double = 0.030
+
+        /// Drift correction: only while your head is within this many degrees of
+        /// center on both axes...
+        static let driftZoneDegrees: Double = 2.0
+        /// ...and moving slower than this (degrees per second)...
+        static let driftStillSpeed: Double = 15
+        /// ...neutral moves toward where your head is, taking about this many seconds.
+        static let driftTimeConstant: Double = 2.0
+    }
+
+    // MARK: - Recenter
+
+    /// Instantly makes "where your head is now" the new neutral (no 3-second
+    /// calibration). Works in every mode. Hotkey works from any app.
+    enum Recenter {
+        static let keyCode = UInt32(kVK_ANSI_R)
+        static let modifiers = UInt32(controlKey | optionKey | cmdKey)
+        static let description = "⌃⌥⌘R  (Control + Option + Command + R)"
     }
 
     // MARK: - Head-to-mouse aiming (Aim mode)

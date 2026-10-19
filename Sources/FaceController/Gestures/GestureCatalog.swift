@@ -39,7 +39,7 @@ enum GestureID: String, CaseIterable, Identifiable {
     /// "°" for head gestures, "%" for expressions.
     var unit: String { isHeadGesture ? "°" : "%" }
 
-    /// Thresholds used in Keys and Aim modes (Snake mode has its own, see Config.Snake).
+    /// Thresholds used in Keys and Aim modes (Snake mode has its own, see SnakeController).
     var thresholds: GestureThresholds {
         switch self {
         case .tiltUp: return Config.Gestures.tiltUp
@@ -121,14 +121,10 @@ enum ControlMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Thresholds for a gesture in this mode.
+    /// Thresholds for a gesture in Keys and Aim modes.
+    /// (Snake's head turns use SnakeController with the live slider settings instead.)
     func thresholds(for gesture: GestureID) -> GestureThresholds {
-        if self == .snake && gesture.isHeadGesture {
-            return GestureThresholds(press: Config.Snake.pressDegrees,
-                                     release: Config.Snake.neutralDegrees,
-                                     holdTime: Config.Snake.holdTime)
-        }
-        return gesture.thresholds
+        gesture.thresholds
     }
 
     /// True when the head moves the mouse instead of pressing keys.

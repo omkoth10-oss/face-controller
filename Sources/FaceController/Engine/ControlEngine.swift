@@ -37,8 +37,21 @@ final class ControlEngine {
     /// Latest value of every gesture (relative to neutral), for the debug window.
     private var latestValues: [GestureID: Double] = [:]
     private var lastTapAt: [GestureID: Double] = [:]
-    /// Snake mode: after a turn, nothing fires until the head is back in the center.
-    private var snakeWaitingForCenter = true
+    /// Neutral head angles: set by calibration, then moved by Recenter and (in Snake
+    /// mode) drift correction. `neutralAnchor` is where it was last set on purpose.
+    private var neutralAngles: HeadAngles?
+    private var neutralAnchor: HeadAngles?
+    private var lastSmoothedAngles: HeadAngles?
+
+    // Snake mode (see SnakeController.swift).
+    private var snake = SnakeController(settings: SnakeSettings())
+    /// Snake's own, lighter smoothing (the Smoothing slider).
+    private var snakeFilter = OffsetFilter()
+    private var snakeStatus = SnakeStatus()
+    private var snakeLatencies = RollingAverage()
+    private var lastSnakeTurnAt: Double?
+    private var lastDriftUpdate: Double?
+    private var driftActive = false
     private var framesMirrored = false
     private var aimState = AimState()
 
@@ -64,8 +77,6 @@ final class ControlEngine {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
-
-    private static let headDirections: [GestureID] = [.tiltUp, .tiltDown, .turnLeft, .turnRight]
 
     init(input: VirtualInput, aim: AimController) {
         self.input = input
@@ -110,7 +121,8 @@ final class ControlEngine {
             self.aimState = AimState()
             self.gestures = Self.makeGestures(for: newMode)
             self.lastTapAt.removeAll()
-            self.snakeWaitingForCenter = true
+            self.snake.requireReturn()
+            self.snakeFilter.reset()
             self.logEvent("Mode: \(newMode.title) (everything released)")
             self.publish(force: true)
         }
@@ -119,6 +131,41 @@ final class ControlEngine {
     /// Tells the engine whether the camera frames are mirrored (see PlayerDirections).
     func setFramesMirrored(_ mirrored: Bool) {
         queue.async { self.framesMirrored = mirrored }
+    }
+
+    /// New values from the Snake sliders.
+    func setSnakeSettings(_ settings: SnakeSettings) {
+        queue.async {
+            let smoothingWasOff = self.snake.settings.smoothingCutoff == nil
+            self.snake.settings = settings
+            if smoothingWasOff && settings.smoothingCutoff != nil {
+                self.snakeFilter.reset()  // Don't blend in stale values when turning smoothing on.
+            }
+            self.publish(force: true)
+        }
+    }
+
+    /// RECENTER: "where my head is right now" becomes neutral, instantly.
+    /// (Calibration takes 3 seconds and also re-measures the mouth/eyebrows;
+    /// recenter only moves the head's neutral.) Releases everything first.
+    func recenter() {
+        queue.async {
+            guard self.calibration != nil, !self.calibrator.isCollecting,
+                  self.snapshot.faceVisible, let current = self.lastSmoothedAngles else {
+                self.logEvent("Can't recenter: no face, or not calibrated yet")
+                self.publish(force: true)
+                return
+            }
+            self.input.releaseAll()
+            self.aim.stopMoving()
+            self.neutralAngles = current
+            self.neutralAnchor = current
+            self.snakeFilter.reset()
+            self.resetAllGestures(requireNeutral: true)
+            self.snake.arm()  // Your head IS the center now, so Snake is ready at once.
+            self.logEvent("Recentered: where your head is now is the new neutral")
+            self.publish(force: true)
+        }
     }
 
     /// Adds a line to the safety/event log shown in the debug window.
@@ -155,7 +202,10 @@ final class ControlEngine {
         // 1. Vision: find the face, its head angles and its expressions.
         let result: TrackingResult
         do {
-            result = try tracker.analyze(pixelBuffer)
+            // Snake doesn't use the mouth/eyebrows, so skip that step for speed
+            // (but always read them while calibrating, for the other modes).
+            let wantExpressions = mode != .snake || calibrator.isCollecting
+            result = try tracker.analyze(pixelBuffer, readExpressions: wantExpressions)
             snapshot.visionError = nil
         } catch {
             result = .noFace
@@ -194,9 +244,11 @@ final class ControlEngine {
         // After a long gap, start smoothing fresh instead of blending in old values.
         if let last = lastFaceSeenAt, now - last > Config.Smoothing.resetAfterGap {
             angleFilter.reset()
+            snakeFilter.reset()
         }
         lastFaceSeenAt = now
         let smoothedAngles = angleFilter.filter(measurement.angles, at: now)
+        lastSmoothedAngles = smoothedAngles
 
         var smoothedExpressions: ExpressionValues?
         if let expressions = measurement.expressions {
@@ -225,11 +277,18 @@ final class ControlEngine {
             return
         }
 
-        guard let calibration = calibration else { return }
+        guard let calibration = calibration, let neutral = neutralAngles else { return }
 
         // Everything is measured relative to your neutral face, from YOUR point of view.
-        let relative = smoothedAngles - calibration.neutral
-        let offset = PlayerDirections.offset(relative: relative, framesMirrored: framesMirrored)
+        let relative = smoothedAngles - neutral
+        var offset = PlayerDirections.offset(relative: relative, framesMirrored: framesMirrored)
+        if mode == .snake {
+            // Snake uses the raw angles with its own, lighter smoothing (Smoothing slider),
+            // because every millisecond of smoothing delay makes turns feel late.
+            let rawOffset = PlayerDirections.offset(relative: measurement.angles - neutral,
+                                                    framesMirrored: framesMirrored)
+            offset = snakeFilter.filter(rawOffset, at: now, cutoff: snake.settings.smoothingCutoff)
+        }
         snapshot.relativeAngles = relative
         snapshot.playerOffset = offset
 
@@ -239,9 +298,9 @@ final class ControlEngine {
             .turnLeft: offset.left,
             .turnRight: -offset.left,
         ]
-        if let expressions = smoothedExpressions, let neutral = calibration.neutralExpressions {
-            values[.mouthOpen] = expressions.mouthOpen - neutral.mouthOpen
-            values[.eyebrowsRaise] = expressions.browHeight - neutral.browHeight
+        if let expressions = smoothedExpressions, let neutralFace = calibration.neutralExpressions {
+            values[.mouthOpen] = expressions.mouthOpen - neutralFace.mouthOpen
+            values[.eyebrowsRaise] = expressions.browHeight - neutralFace.browHeight
         }
         latestValues = values
 
@@ -260,7 +319,7 @@ final class ControlEngine {
         case .keys, .aim:
             runHoldGestures(values: values, timing: timing)
         case .snake:
-            runSnake(values: values, timing: timing)
+            runSnake(offset: offset, smoothedAngles: smoothedAngles, timing: timing)
         }
 
         if mode.headMovesMouse {
@@ -336,38 +395,66 @@ final class ControlEngine {
         if changed { publish(force: true) }
     }
 
-    /// Snake mode: one arrow-key TAP per head movement, then wait for the center.
-    private func runSnake(values: [GestureID: Double], timing: FrameTiming) {
+    /// Snake mode: one arrow-key TAP per turn. The rules live in SnakeController.
+    private func runSnake(offset: PlayerHeadOffset, smoothedAngles: HeadAngles, timing: FrameTiming) {
         let now = timing.arrival
-        let directions = Self.headDirections
 
-        if snakeWaitingForCenter {
-            // "Center" = within neutralDegrees of neutral on BOTH axes.
-            let centered = directions.allSatisfy { abs(values[$0] ?? .infinity) < Config.Snake.neutralDegrees }
-            guard centered else { return }
-            snakeWaitingForCenter = false
-            for direction in directions {
-                gestures[direction]?.reset(requireNeutral: false)
+        if let turn = snake.update(offset: offset, at: now), let binding = mode.bindings[turn.gesture] {
+            if input.tap(binding.action, duration: Config.Snake.tapDuration) {
+                recordOutputEvent(timing: timing)
+                if let latency = snapshot.lastOutputLatencyMs {
+                    snakeLatencies.add(latency)
+                    snakeStatus.lastTurnLatencyMs = latency
+                }
+                lastTapAt[turn.gesture] = now
+                lastSnakeTurnAt = now
+                snakeStatus.turnCount += 1
+                let name = Self.snakeDirectionName(turn.gesture)
+                if turn.viaFlick {
+                    snakeStatus.flickTurnCount += 1
+                    snakeStatus.lastTurn = "\(name) by flick (\(Int(turn.speed))°/s)"
+                } else {
+                    snakeStatus.lastTurn = "\(name) by position"
+                }
             }
             publish(force: true)
         }
 
-        for direction in directions {
-            guard let binding = mode.bindings[direction],
-                  let value = values[direction],
-                  gestures[direction]?.update(value: value, at: now) == .press else { continue }
+        applyDriftCorrection(offset: offset, smoothedAngles: smoothedAngles, at: now)
+    }
 
-            if input.tap(binding.action, duration: Config.Snake.tapDuration) {
-                recordOutputEvent(timing: timing)
-                lastTapAt[direction] = now
-            }
-            // One turn per head movement: everything waits until the head is centered.
-            snakeWaitingForCenter = true
-            for other in directions {
-                gestures[other]?.reset(requireNeutral: true)
-            }
-            publish(force: true)
-            return
+    /// DRIFT CORRECTION: while your head rests still near the center, slowly move
+    /// "neutral" toward where your head actually is. Posture changes (slouching,
+    /// leaning) then can't build up until a turn fires by itself or never re-arms.
+    /// It only acts inside a small zone around the center, so real turns aren't eaten.
+    private func applyDriftCorrection(offset: PlayerHeadOffset, smoothedAngles: HeadAngles, at now: Double) {
+        defer { lastDriftUpdate = now }
+        driftActive = false
+        guard snake.settings.driftCorrection, var neutral = neutralAngles, let last = lastDriftUpdate else { return }
+
+        let zone = Config.Snake.driftZoneDegrees
+        let stillSpeed = Config.Snake.driftStillSpeed
+        guard abs(offset.left) < zone, abs(offset.up) < zone,
+              abs(snake.horizontal.speed) < stillSpeed, abs(snake.vertical.speed) < stillSpeed,
+              !snake.isHolding else { return }
+
+        // Move a small step toward the current head position (time constant ~2 s).
+        let dt = min(max(now - last, 0), 0.1)
+        let step = dt / Config.Snake.driftTimeConstant
+        neutral.pitch += (smoothedAngles.pitch - neutral.pitch) * step
+        neutral.yaw += (smoothedAngles.yaw - neutral.yaw) * step
+        neutral.roll += (smoothedAngles.roll - neutral.roll) * step
+        neutralAngles = neutral
+        driftActive = true
+    }
+
+    private static func snakeDirectionName(_ gesture: GestureID) -> String {
+        switch gesture {
+        case .turnLeft: return "LEFT"
+        case .turnRight: return "RIGHT"
+        case .tiltUp: return "UP"
+        case .tiltDown: return "DOWN"
+        case .mouthOpen, .eyebrowsRaise: return gesture.displayName
         }
     }
 
@@ -396,7 +483,7 @@ final class ControlEngine {
         for gesture in GestureID.allCases {
             gestures[gesture]?.reset(requireNeutral: requireNeutral)
         }
-        snakeWaitingForCenter = true
+        snake.requireReturn()
     }
 
     // MARK: - Calibration
@@ -418,6 +505,9 @@ final class ControlEngine {
 
     private func finishCalibration(_ result: CalibrationResult) {
         calibration = result
+        neutralAngles = result.neutral
+        neutralAnchor = result.neutral
+        snakeFilter.reset()
         resetAllGestures(requireNeutral: true)
         snapshot.calibration = .done(result)
         input.setBlocked(.calibrating, false)
@@ -509,7 +599,9 @@ final class ControlEngine {
 
         snapshot.mode = mode
         snapshot.framesMirrored = framesMirrored
-        snapshot.snakeWaitingForCenter = mode == .snake && snakeWaitingForCenter
+        if mode == .snake {
+            snapshot.snake = makeSnakeStatus(now: now)
+        }
         snapshot.aim = mode.headMovesMouse ? aimState : AimState(sensitivity: aim.currentSensitivity)
         snapshot.gestures = GestureID.allCases.map { gesture in
             let binding = mode.bindings[gesture]
@@ -521,6 +613,9 @@ final class ControlEngine {
                 case .tap:
                     firing = lastTapAt[gesture].map { now - $0 < Config.UI.tapFlashDuration } ?? false
                 }
+            }
+            if mode == .snake && gesture.isHeadGesture {
+                return snakeGestureSnapshot(gesture, binding: binding, firing: firing, now: now)
             }
             return GestureSnapshot(gesture: gesture,
                                    value: latestValues[gesture],
@@ -541,5 +636,68 @@ final class ControlEngine {
         snapshot.averageOutputLatencyMs = outputLatencies.average
 
         onSnapshot?(snapshot)
+    }
+
+    // MARK: - Snake status for the window
+
+    private func makeSnakeStatus(now: Double) -> SnakeStatus {
+        var status = snakeStatus
+        status.blocker = snakeBlocker()
+        status.horizontalText = snake.horizontal.statusText(settings: snake.settings)
+        status.verticalText = snake.vertical.statusText(settings: snake.settings)
+        status.horizontalArmed = snake.horizontal.isArmed
+        status.verticalArmed = snake.vertical.isArmed
+        status.horizontalSpeed = snake.horizontal.speed
+        status.verticalSpeed = snake.vertical.speed
+        status.secondsSinceLastTurn = lastSnakeTurnAt.map { now - $0 }
+        status.averageTurnLatencyMs = snakeLatencies.average
+        status.driftActive = driftActive
+        if let neutral = neutralAngles, let anchor = neutralAnchor {
+            status.driftShiftDegrees = hypot(neutral.pitch - anchor.pitch, neutral.yaw - anchor.yaw)
+        }
+        return status
+    }
+
+    /// Why no turn can fire at all right now, in plain language.
+    private func snakeBlocker() -> String? {
+        if let reason = input.currentBlockReasons.first {
+            return "Blocked: \(reason.rawValue)"
+        }
+        if calibration == nil || calibrator.isCollecting {
+            return "Calibrating: look straight at the camera"
+        }
+        if !snapshot.faceVisible {
+            return "No face: look at the camera"
+        }
+        return nil
+    }
+
+    /// Gesture-table row for a Snake direction (uses the live Snake settings).
+    private func snakeGestureSnapshot(_ gesture: GestureID, binding: OutputBinding?,
+                                      firing: Bool, now: Double) -> GestureSnapshot {
+        let isHorizontal = gesture == .turnLeft || gesture == .turnRight
+        let axis = isHorizontal ? snake.horizontal : snake.vertical
+        let sign: Double = (gesture == .turnLeft || gesture == .tiltUp) ? 1 : -1
+        let settings = snake.settings
+
+        let phase: GesturePhase
+        switch axis.phase {
+        case .armed:
+            phase = .ready
+        case .holding(let holdSign, let since):
+            phase = holdSign == sign
+                ? .holding(progress: min(1, (now - since) / max(settings.holdTime, 0.001)))
+                : .ready
+        case .waitingForReturn:
+            phase = .waitingForNeutral
+        }
+        return GestureSnapshot(gesture: gesture,
+                               value: latestValues[gesture],
+                               thresholds: GestureThresholds(press: settings.pressDegrees,
+                                                             release: settings.rearmDegrees,
+                                                             holdTime: settings.holdTime),
+                               binding: binding,
+                               phase: phase,
+                               firing: firing)
     }
 }

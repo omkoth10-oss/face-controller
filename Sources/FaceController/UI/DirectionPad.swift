@@ -8,6 +8,8 @@ import SwiftUI
 struct DirectionPad: View {
     let offset: PlayerHeadOffset?
     let mode: ControlMode
+    /// Snake's live press threshold (from its slider).
+    let snakePressDegrees: Double
 
     /// Degrees from neutral shown at the edge of the pad.
     private let range: Double = 20
@@ -18,7 +20,7 @@ struct DirectionPad: View {
         switch mode {
         case .keys: return Config.Gestures.turnLeft.press
         case .aim: return Config.Aim.horizontalDeadzone
-        case .snake: return Config.Snake.pressDegrees
+        case .snake: return snakePressDegrees
         }
     }
 
@@ -26,7 +28,7 @@ struct DirectionPad: View {
         switch mode {
         case .keys: return Config.Gestures.tiltUp.press
         case .aim: return Config.Aim.verticalDeadzone
-        case .snake: return Config.Snake.pressDegrees
+        case .snake: return snakePressDegrees
         }
     }
 

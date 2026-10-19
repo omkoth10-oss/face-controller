@@ -76,7 +76,9 @@ final class HeadPoseTracker {
     }
 
     /// Runs Vision on one frame. Call this from the tracking queue only.
-    func analyze(_ pixelBuffer: CVPixelBuffer) throws -> TrackingResult {
+    /// `readExpressions` = false skips the landmarks step (saves a few ms when the
+    /// current mode doesn't use the mouth or eyebrows, e.g. Snake).
+    func analyze(_ pixelBuffer: CVPixelBuffer, readExpressions: Bool) throws -> TrackingResult {
         lastLandmarksDuration = nil
 
         // Mac cameras deliver upright landscape frames, so orientation is `.up`.
@@ -99,8 +101,8 @@ final class HeadPoseTracker {
                                 roll: degrees(face.roll?.doubleValue ?? 0))
 
         var expressions: ExpressionValues?
-        if Config.Tracking.expressionsEnabled {
-            expressions = readExpressions(of: face, handler: handler, pixelBuffer: pixelBuffer)
+        if Config.Tracking.expressionsEnabled && readExpressions {
+            expressions = measureExpressions(of: face, handler: handler, pixelBuffer: pixelBuffer)
         }
 
         return .face(FaceMeasurement(angles: angles,
@@ -111,9 +113,9 @@ final class HeadPoseTracker {
 
     /// Runs the landmarks request on the face we already found.
     /// A landmarks failure only loses the expressions for this frame; head tracking continues.
-    private func readExpressions(of face: VNFaceObservation,
-                                 handler: VNImageRequestHandler,
-                                 pixelBuffer: CVPixelBuffer) -> ExpressionValues? {
+    private func measureExpressions(of face: VNFaceObservation,
+                                    handler: VNImageRequestHandler,
+                                    pixelBuffer: CVPixelBuffer) -> ExpressionValues? {
         let start = HostClock.now()
         defer { lastLandmarksDuration = HostClock.now() - start }
 

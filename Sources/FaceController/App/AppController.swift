@@ -14,6 +14,9 @@ final class DebugModel: ObservableObject {
     @Published var killSwitchRegistered = false
     @Published var mode = Config.Mapping.startMode
     @Published var aimSensitivity = Config.Aim.defaultSensitivity
+    /// Your Snake slider values (loaded from the last launch).
+    @Published var snakeSettings = SnakeSettings.load()
+    @Published var recenterHotKeyRegistered = false
 }
 
 /// Wires all the pieces together and handles everything that happens on the
@@ -34,6 +37,7 @@ final class AppController {
     let camera: CameraManager
 
     private var killSwitch: GlobalHotKey?
+    private var recenterHotKey: GlobalHotKey?
     private var permissionTimer: Timer?
     private var controlEnabled = Config.Safety.startWithControlOn
     private var cameraStartRequested = false
@@ -68,9 +72,11 @@ final class AppController {
                 self?.model.engine = snapshot
             }
         }
+        engine.setSnakeSettings(model.snakeSettings)
         engine.start()
 
         registerKillSwitch()
+        registerRecenterHotKey()
 
         checkPermissions()
         let timer = Timer(timeInterval: Config.Safety.permissionCheckInterval, repeats: true) { [weak self] _ in
@@ -87,6 +93,7 @@ final class AppController {
         permissionTimer?.invalidate()
         permissionTimer = nil
         killSwitch = nil
+        recenterHotKey = nil
         // The camera is closed automatically when the process exits. We don't wait
         // for it to stop here: waiting on the main thread while quitting could hang.
     }
@@ -127,6 +134,25 @@ final class AppController {
         aim.setSensitivity(value)
     }
 
+    /// Instantly makes the current head position the new neutral (button, R key, ⌃⌥⌘R).
+    func recenter() {
+        engine.recenter()
+        NSSound(named: "Morse")?.play()
+    }
+
+    /// New Snake slider values: used immediately and saved for next time.
+    func setSnakeSettings(_ settings: SnakeSettings) {
+        let clamped = settings.clamped()
+        guard clamped != model.snakeSettings else { return }
+        model.snakeSettings = clamped
+        clamped.save()
+        engine.setSnakeSettings(clamped)
+    }
+
+    func resetSnakeSettings() {
+        setSnakeSettings(SnakeSettings())
+    }
+
     private func registerKillSwitch() {
         killSwitch = GlobalHotKey(keyCode: Config.Safety.killSwitchKeyCode,
                                   modifiers: Config.Safety.killSwitchModifiers) { [weak self] in
@@ -135,6 +161,18 @@ final class AppController {
         model.killSwitchRegistered = (killSwitch != nil)
         if killSwitch == nil {
             engine.noteEvent("WARNING: couldn't register the kill-switch hotkey (another app may use it)")
+        }
+    }
+
+    private func registerRecenterHotKey() {
+        recenterHotKey = GlobalHotKey(keyCode: Config.Recenter.keyCode,
+                                      modifiers: Config.Recenter.modifiers,
+                                      id: 2) { [weak self] in
+            self?.recenter()
+        }
+        model.recenterHotKeyRegistered = (recenterHotKey != nil)
+        if recenterHotKey == nil {
+            engine.noteEvent("WARNING: couldn't register the recenter hotkey (another app may use it)")
         }
     }
 

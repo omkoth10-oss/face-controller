@@ -109,3 +109,23 @@ struct ExpressionFilter {
         brow.reset()
     }
 }
+
+/// Smooths the player head offset for Snake mode, with an adjustable amount
+/// (the Smoothing slider). `cutoff` nil = no smoothing at all.
+struct OffsetFilter {
+    private var left = OneEuroFilter()
+    private var up = OneEuroFilter()
+
+    mutating func filter(_ offset: PlayerHeadOffset, at time: Double, cutoff: Double?) -> PlayerHeadOffset {
+        guard let cutoff = cutoff else { return offset }
+        left.minCutoff = cutoff
+        up.minCutoff = cutoff
+        return PlayerHeadOffset(left: left.filter(offset.left, at: time),
+                                up: up.filter(offset.up, at: time))
+    }
+
+    mutating func reset() {
+        left.reset()
+        up.reset()
+    }
+}
