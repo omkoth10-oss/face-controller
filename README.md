@@ -98,10 +98,15 @@ and run `swift run` again.
   tap. After a turn, that direction's axis re-arms as soon as you come partway
   back (the other axis stays ready, so you can chain "left, then up"). Fast
   combos and diagonals send every turn: turns that come very close together are
-  spaced a few ms apart, never dropped. Optional bounce-back and double-turn
-  blocks can be switched on in the Snake panel (off by default; Google Snake
-  ignores reversals and repeats itself). The **Turn log** lists every turn, and
-  shows in red any turn that didn't go through, with the reason. All of it is tunable live with sliders in
+  spaced a few ms apart, never dropped. The **extra-turn guard** (on by default)
+  stops small side-effect flicks from turning the snake: while your head swings
+  back past the center after a turn, or while the other direction is moving
+  faster, a flick must reach the full press threshold instead of 30% of it.
+  Optional bounce-back and double-turn blocks can be switched on in the Snake
+  panel (off by default; Google Snake ignores reversals and repeats itself). The
+  **Turn log** lists every turn and how far your head went for it, shows in red
+  any turn that didn't go through (with the reason), and in orange any flick the
+  extra-turn guard ignored. All of it is tunable live with sliders in
   the **Snake tuning** panel; your values are saved between launches. See
   TESTING.md for a tuning guide.
 - Switching mode releases everything first.
@@ -199,6 +204,10 @@ its label.
 | `Aim.smoothingTime` | 0.05 s | Eases speed changes between camera frames. 0 = none. |
 | `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed). Normally just use the sliders. |
 | `Snake.defaultMinTurnInterval` | 45 ms | Starting value of the "Min time between turns" slider. Turns closer than this are sent a little later, never dropped. |
+| `Snake.defaultExtraTurnGuardEnabled` | on | Starting state of the Extra-turn guard switch in the Snake panel. |
+| `Snake.extraTurnGuardFraction` | 1.0 | When the guard is suspicious of a flick (swing-back or leak), it must reach this fraction of the press threshold to fire. |
+| `Snake.swingBackWindow` / `swingBackEndFraction` | 0.5 s / 0.25 | The swing-back check lasts at most this long after re-arming, or until the head slows below this fraction of the flick speed. |
+| `Snake.reattemptDipFraction` | 0.5 | "Not re-armed yet" is only logged after the head came back this fraction of the press threshold from its furthest point. |
 | `Snake.defaultBounceBlockEnabled` / `defaultSameDirectionBlockEnabled` | off / off | Starting state of the two optional block switches in the Snake panel. |
 | `Snake.bounceBlock` | 0.35 s | When the bounce-back block is ON: after re-arming, ignore turns the opposite way on that axis for this long. |
 | `Snake.sameDirectionCooldown` | 0.25 s | When the double-turn block is ON: the same direction can't fire twice within this time. |
@@ -243,8 +252,9 @@ its label.
 - **Floating center**: on/off for the current mode, Follow time slider, what the
   center is doing right now ("following", "paused: A held", ...), and how far it
   has moved.
-- **Turn log** (Snake mode only): each turn (✓, with time and latency) and each
-  blocked turn (✗, with the reason).
+- **Turn log** (Snake mode only): each turn (✓, with time, latency and how far
+  your head went), each blocked turn (red ✗, with the reason) and each flick the
+  extra-turn guard ignored (orange ✗).
 - **Calibration** status, your neutral face, and "jitter" (how much each value
   wobbled while you held still; small is good). Orange warnings mean a reading
   is noisy compared with its threshold.

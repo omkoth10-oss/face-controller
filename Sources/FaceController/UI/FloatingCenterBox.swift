@@ -71,12 +71,15 @@ struct FloatingCenterBox: View {
     }
 }
 
-/// Snake's Turn log: every turn that fired (with its latency) and every turn that
-/// was held back or not sent, in RED with the exact reason. Newest at the top.
+/// Snake's Turn log, newest at the top:
+/// - ✓ turns that fired (with latency, and how far the head went once it's back),
+/// - RED: turns that were held back or not sent, with the exact reason,
+/// - ORANGE: small flicks the extra-turn guard ignored as side effects of another movement.
 struct TurnLogView: View {
     let entries: [TurnLogEntry]
 
-    private var blockedCount: Int { entries.filter { !$0.fired }.count }
+    private var blockedCount: Int { entries.filter { !$0.fired && !$0.ignoredExtra }.count }
+    private var ignoredCount: Int { entries.filter { $0.ignoredExtra }.count }
 
     var body: some View {
         GroupBox(label: Text("Turn log (newest first)")) {
@@ -84,10 +87,16 @@ struct TurnLogView: View {
                 if entries.isEmpty {
                     Text("No turns yet.")
                         .foregroundColor(.secondary)
-                } else if blockedCount > 0 {
-                    Text("\(blockedCount) of the last \(entries.count) turns did NOT go through (red).")
+                }
+                if blockedCount > 0 {
+                    Text("\(blockedCount) of the last \(entries.count) lines: a turn did NOT go through (red).")
                         .font(.caption.bold())
                         .foregroundColor(.red)
+                }
+                if ignoredCount > 0 {
+                    Text("\(ignoredCount) ignored as extra turns (orange). If one was a turn you wanted, tell me.")
+                        .font(.caption.bold())
+                        .foregroundColor(.orange)
                 }
                 ForEach(entries) { entry in
                     row(entry)
@@ -106,7 +115,7 @@ struct TurnLogView: View {
             Text(entry.time)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(entry.fired ? .secondary : .white)
-            Text(entry.text)
+            (Text(entry.text) + reachedText(entry))
                 .font(.system(.callout, design: .monospaced))
                 .fontWeight(entry.fired ? .regular : .bold)
                 .foregroundColor(entry.fired ? .primary : .white)
@@ -120,7 +129,20 @@ struct TurnLogView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background(entry.fired ? Color.clear : Color.red.opacity(0.85))
+        .background(rowColor(entry))
         .cornerRadius(4)
+    }
+
+    private func rowColor(_ entry: TurnLogEntry) -> Color {
+        if entry.fired { return .clear }
+        return entry.ignoredExtra ? Color.orange.opacity(0.85) : Color.red.opacity(0.85)
+    }
+
+    /// "· head went to 13°" once the turn's movement is over. Real turns usually go
+    /// well past the press threshold; an extra turn barely makes it.
+    private func reachedText(_ entry: TurnLogEntry) -> Text {
+        guard let reached = entry.reachedDegrees else { return Text("") }
+        return Text(String(format: " · head went to %.0f°", reached))
+            .foregroundColor(.secondary)
     }
 }

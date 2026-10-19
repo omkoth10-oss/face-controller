@@ -31,6 +31,11 @@ struct TurnLogEntry: Identifiable {
     let fired: Bool
     /// Camera frame → key event, for turns that fired.
     let latencyMs: Double?
+    /// Not fired because the extra-turn guard judged it a side effect of another
+    /// movement (orange), rather than a real turn being blocked (red).
+    let ignoredExtra: Bool
+    /// How far the head went for this turn, filled in once it comes back.
+    var reachedDegrees: Double? = nil
 }
 
 /// Snake mode's live state, for the Snake tuning panel.
@@ -53,6 +58,7 @@ struct SnakeStatus {
     var turnCount = 0
     var flickTurnCount = 0
     var blockedCount = 0
+    var ignoredExtraCount = 0
     /// Newest first.
     var turnLog: [TurnLogEntry] = []
 }

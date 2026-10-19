@@ -53,6 +53,8 @@ final class ControlEngine {
     private var lastSnakeTurnAt: Double?
     /// When the last Snake tap was (or is scheduled to be) sent, for spacing taps.
     private var lastSnakeTapSlot = -Double.infinity
+    /// Turn log line of each direction's latest turn, to add "head went to N°" later.
+    private var snakeTurnLogIds: [GestureID: Int] = [:]
     private var turnLogCounter = 0
     /// Snake: an attempted turn while input is blocked was already logged.
     private var blockedByInputLogged = false
@@ -436,14 +438,23 @@ final class ControlEngine {
         let result = snake.update(offset: offset, at: timing.arrival)
 
         for blocked in result.blocked {
-            snakeStatus.blockedCount += 1
-            addTurnLog("\(SnakeController.name(of: blocked.gesture)) BLOCKED: \(blocked.reason)",
-                       fired: false, latencyMs: nil)
+            let name = SnakeController.name(of: blocked.gesture)
+            if blocked.isExtraTurn {
+                snakeStatus.ignoredExtraCount += 1
+                addTurnLog("\(name) IGNORED as an extra turn: \(blocked.reason)",
+                           fired: false, latencyMs: nil, ignoredExtra: true)
+            } else {
+                snakeStatus.blockedCount += 1
+                addTurnLog("\(name) BLOCKED: \(blocked.reason)", fired: false, latencyMs: nil)
+            }
+        }
+        for settled in result.settled {
+            noteTurnReach(settled)
         }
         for turn in result.turns {
             scheduleSnakeTurn(turn, timing: timing)
         }
-        if !result.turns.isEmpty || !result.blocked.isEmpty {
+        if !result.turns.isEmpty || !result.blocked.isEmpty || !result.settled.isEmpty {
             publish(force: true)
         }
     }
@@ -487,11 +498,15 @@ final class ControlEngine {
             snakeStatus.turnCount += 1
             if turn.viaFlick { snakeStatus.flickTurnCount += 1 }
             var how = turn.viaFlick ? "by flick (\(Int(turn.speed))°/s)" : "by position"
+            if let note = turn.note {
+                how += ", \(note)"
+            }
             if delay > 0 {
                 how += String(format: ", sent %.0f ms later to space it from the previous turn", delay * 1000)
             }
             snakeStatus.lastTurn = "\(name) \(how)"
             addTurnLog("\(name) \(how)", fired: true, latencyMs: latency)
+            snakeTurnLogIds[turn.gesture] = turnLogCounter
         } else {
             let reason = input.currentBlockReasons.first?.rawValue ?? "input blocked"
             snakeStatus.blockedCount += 1
@@ -519,13 +534,22 @@ final class ControlEngine {
         }
     }
 
-    private func addTurnLog(_ text: String, fired: Bool, latencyMs: Double?) {
+    /// A turn's movement is over: add how far the head went to its Turn log line.
+    /// (Real turns usually go well past the press threshold; extra ones barely make it.)
+    private func noteTurnReach(_ settled: SnakeSettledTurn) {
+        guard let id = snakeTurnLogIds.removeValue(forKey: settled.gesture),
+              let index = snakeStatus.turnLog.firstIndex(where: { $0.id == id }) else { return }
+        snakeStatus.turnLog[index].reachedDegrees = settled.peakDegrees
+    }
+
+    private func addTurnLog(_ text: String, fired: Bool, latencyMs: Double?, ignoredExtra: Bool = false) {
         turnLogCounter += 1
         let entry = TurnLogEntry(id: turnLogCounter,
                                  time: Self.preciseTimeFormatter.string(from: Date()),
                                  text: text,
                                  fired: fired,
-                                 latencyMs: latencyMs)
+                                 latencyMs: latencyMs,
+                                 ignoredExtra: ignoredExtra)
         snakeStatus.turnLog.insert(entry, at: 0)
         if snakeStatus.turnLog.count > Config.Snake.turnLogLength {
             snakeStatus.turnLog.removeLast(snakeStatus.turnLog.count - Config.Snake.turnLogLength)

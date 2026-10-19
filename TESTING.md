@@ -175,7 +175,28 @@ near the center; did it work in a game (which); jittery or smooth?
 
 ## 7. Google Snake (15 min)
 
-**What changed since your last test (round 4: "fast turns don't fire"):**
+**What changed since your last test (round 5: "unwanted extra turns"):**
+- New **Extra-turn guard** (ON by default, switch in the Snake panel). A flick
+  normally fires very early (at 30% of the press threshold, 1.5° by default).
+  In two moments that's too trusting, so there a flick must reach the **full
+  press threshold** (5°) first:
+  - **Swing-back:** you just came back fast from a turn and your head swings on
+    past the center the other way (e.g. a big LEFT, then a small RIGHT as you
+    come back).
+  - **Leak:** the other direction is moving faster right now (turning your head
+    also tilts it a little, and the reverse), so a small UP/DOWN during a fast
+    LEFT/RIGHT is probably a side effect.
+  Real turns go further than that and still fire. The small ones that stop short
+  show as **orange** lines in the Turn log ("IGNORED as an extra turn", with how
+  far it got). If an orange line was a turn you actually wanted, tell me.
+- Each ✓ line now adds **"head went to N°"** once you come back: how far your head
+  went for that turn. Real turns usually go well past 5°; if yours go to 15–25°,
+  smaller head moves are enough and cause fewer swing-back turns.
+- The red **"not re-armed yet"** lines no longer appear while your head is still
+  going further out in the same big movement (that wasn't a new attempt). They
+  only appear if you came part of the way back and then went the same way again.
+
+**Round 4 (still true):**
 - The **bounce-back** and **double-turn** blocks are now **OFF** by default.
   They were eating real fast turns (e.g. right → down → left blocked "left").
   Google Snake ignores a turn straight back and a repeat of your direction by
@@ -211,7 +232,12 @@ near the center; did it work in a game (which); jittery or smooth?
       < 2.3° to re-arm").
 - [ ] Watch the **Turn log** while you play. Every turn you meant should be a
       ✓ line. A **red** line is a turn that didn't go through, with the reason.
-      With the default settings there should be very few red lines.
+      An **orange** line is a small flick ignored as an extra turn. With the
+      default settings there should be very few red lines.
+- [ ] **Extra turns:** play normally for a few games. Do you still get turns you
+      didn't mean? When one happens, screenshot the Turn log right away (the
+      unwanted turn is near the top). Note whether any orange line was a turn you
+      wanted.
 - [ ] **Fast combos:** right → down → left quickly, and up → left → down quickly.
       Every step should be a ✓ (some may say "sent N ms later": that's fine).
 - [ ] **Fast diagonal:** move left and up at the same time. You should get two ✓
@@ -235,7 +261,8 @@ Change **one slider at a time**, play a game, and keep it if it's better.
 | Random turns while sitting still | Raise **Smoothing** (e.g. 40%) or **Press threshold**; make sure the Floating center is on; press Recenter. |
 | Center seems to wander off | Press Recenter. Try a slower **Follow time** (Floating center box), or turn the floating center off for Snake and compare. |
 | A red line "not re-armed yet" | You turned the same way twice without coming back enough in between. Raise **Re-arm** (e.g. 60%). |
-| Unwanted extra turns (e.g. a turn from swinging back) | Switch on **Block bounce-back turns** and/or **Block double turns**, and see if it helps without eating real turns (watch for red lines). |
+| Unwanted extra turns (e.g. a turn from swinging back) | Make sure **Extra-turn guard** is on. Use smaller, sharper head moves (check "head went to N°"). Still happening? Raise **Flick speed** a little (e.g. 90°/s), or try **Block bounce-back turns** (watch for red lines). |
+| An orange "IGNORED" line was a turn I wanted | Move that direction a bit further, or switch **Extra-turn guard** off and compare. |
 | Two fast turns arrive too close together for the game | Raise **Min time between turns** (e.g. 80 ms). |
 
 The **head speed** under each "Right now" line shows how fast you move: a
@@ -250,7 +277,10 @@ deliberate flick should be well above the Flick speed, sitting still well below.
 - Which "Right now" message did you see most when a turn didn't fire?
 - Turn log: any red lines? Screenshot them (they show the exact reason).
 - Fast combos (right → down → left) and diagonals: did every step go through?
-- Did you get unwanted extra turns now that the blocks are off?
+- Unwanted extra turns: still happening? How often? Screenshot of the Turn log
+  right after one.
+- Orange "IGNORED" lines: were any of them turns you wanted?
+- Typical "head went to N°" values.
 
 ## 8. Quick game check (optional, 5 min)
 
@@ -295,7 +325,8 @@ Snake: best score before tuning __  after tuning __
        missed turns __  double turns __  wrong direction __
        most common "Right now" message when a turn didn't fire: __
        red Turn log lines (screenshot): __   fast combos all ✓? __   diagonals both ✓? __
-       unwanted extra turns with blocks off? __
+       unwanted extra turns (how often)? __   orange lines that were real turns? __
+       typical "head went to" __°
 
 What felt worst / what made you want to stop using it:
 Anything else:

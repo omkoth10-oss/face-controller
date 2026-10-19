@@ -97,7 +97,7 @@ struct SnakePanel: View {
             Text("Frame → key: last \(DisplayFormat.milliseconds(status.lastTurnLatencyMs)), average \(DisplayFormat.milliseconds(status.averageTurnLatencyMs))")
                 .font(.caption)
                 .monospacedDigit()
-            Text("Turns: \(status.turnCount) (\(status.flickTurnCount) by flick), \(status.blockedCount) blocked")
+            Text("Turns: \(status.turnCount) (\(status.flickTurnCount) by flick), \(status.blockedCount) blocked, \(status.ignoredExtraCount) extra turns ignored")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -155,6 +155,17 @@ struct SnakePanel: View {
                       value: setting(\.minTurnInterval), range: Config.Snake.minTurnIntervalRange, step: 0.005,
                       text: String(format: "%.0f ms", settings.minTurnInterval * 1000),
                       help: "Two turns closer than this are spaced out: the second is sent a little later, never dropped.")
+
+            Toggle(isOn: toggle(\.extraTurnGuardEnabled)) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Extra-turn guard (recommended)")
+                    Text(String(format: "A small flick while your head swings back past the center, or while the other direction is moving faster, only counts once it reaches %.1f°. Real turns go further and still fire.",
+                                settings.guardDegrees))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             Text("Optional blocks (off = nothing gets eaten; Google Snake ignores reversals and repeats itself)")
                 .font(.caption)

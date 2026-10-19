@@ -167,6 +167,17 @@ enum Config {
         /// taps are harmless, while these blocks were eating real fast turns.
         static let defaultBounceBlockEnabled = false
         static let defaultSameDirectionBlockEnabled = false
+        /// EXTRA-TURN GUARD, ON by default: a flick normally fires at 30% of the press
+        /// threshold. If it looks like a side effect of another movement (your head
+        /// swinging back past the center after a turn, or the OTHER direction moving
+        /// faster right now), it must reach this fraction of the press threshold
+        /// instead (1.0 = the full threshold). Real turns go that far and still fire.
+        static let defaultExtraTurnGuardEnabled = true
+        static let extraTurnGuardFraction: Double = 1.0
+        /// Swing-back: after a fast return the guard watches at most this long...
+        static let swingBackWindow: Double = 0.5
+        /// ...or until the head slows below this fraction of the flick speed.
+        static let swingBackEndFraction: Double = 0.25
 
         /// Slider ranges.
         static let pressRange: ClosedRange<Double> = 2...12
@@ -189,6 +200,10 @@ enum Config {
         /// DOUBLE-TURN block (only if switched on): the same direction can't fire
         /// twice within this time.
         static let sameDirectionCooldown: Double = 0.25
+        /// "Not re-armed yet" is only logged when the head first came back at least this
+        /// fraction of the press threshold from its furthest point (a NEW attempt), not
+        /// while it's still going further out in the same big movement.
+        static let reattemptDipFraction: Double = 0.5
         /// How long each tap holds the arrow key down before releasing it.
         static let tapDuration: Double = 0.030
         /// How many lines the Turn log keeps.
