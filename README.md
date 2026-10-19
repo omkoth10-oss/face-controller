@@ -74,8 +74,10 @@ and run `swift run` again.
    relative to it.
 2. Pick a **Mode** in the debug window (middle column).
 3. Click into another app (TextEdit, Chrome, a game) and use your face.
-4. **Recalibrate** any time: click the debug window and press **C** (or click
-   **Recalibrate**). Do this whenever you change how you're sitting.
+4. **Recenter** any time with **⌃⌥⌘R** (from any app), or **R** / the
+   **Recenter now** button in the debug window: wherever your head is right now
+   becomes neutral, instantly. **Recalibrate** (**C**) does the full 3-second
+   calibration again, including your mouth and eyebrows.
 
 ### Modes
 
@@ -83,7 +85,7 @@ and run `swift run` again.
 |---|---|---|---|
 | **Keys** | tilt up = hold **Space**, turn left = hold **A**, turn right = hold **D** | hold **left mouse button** | hold **E** |
 | **Aim (mouse)** | moves the mouse pointer (like a joystick) | hold **left mouse button** | hold **E** |
-| **Snake** | up / down / left / right = **one tap** of ↑ ↓ ← → | off | off |
+| **Snake** | up / down / left / right (or a quick flick) = **one tap** of ↑ ↓ ← → | off | off |
 
 - **Hold** gestures keep the key/button down for as long as you hold the gesture.
   A quick open-and-close of the mouth is a click; keeping it open is a held click
@@ -92,9 +94,12 @@ and run `swift run` again.
   pointer moves; come back to neutral and it stops. Space/A/D are off in this
   mode because the head can't do both jobs at once yet (that's Phase 3). Use the
   **Sensitivity** slider to adjust speed.
-- **Snake mode:** each head movement sends one arrow-key tap, then nothing else
-  fires until your head is back in the center. That stops one movement from
-  turning the snake several times.
+- **Snake mode:** each head turn/tilt, or a quick **flick**, sends one arrow-key
+  tap. After a turn, that direction's axis re-arms as soon as you come partway
+  back (the other axis stays ready, so you can chain "left, then up"). While your
+  head rests still near the center, neutral slowly follows your posture. All of
+  it is tunable live with sliders in the **Snake tuning** panel; your values are
+  saved between launches. See TESTING.md for a tuning guide.
 - Switching mode releases everything first.
 
 ### Directions are from YOUR point of view
@@ -104,6 +109,12 @@ whatever the camera does. The preview is mirrored like a selfie, and the app
 corrects for camera mirroring automatically. The **Direction** pad (left column)
 shows which way the app thinks you're moving; if a camera ever comes out
 backwards, set `Directions.flipHorizontal` / `flipVertical` in `Config.swift`.
+
+## Hotkeys (work from any app)
+
+- **⌃⌥⌘K** (Control + Option + Command + K): kill switch, see below.
+- **⌃⌥⌘R** (Control + Option + Command + R): recenter (your head's current
+  position becomes neutral). Short sound when it happens.
 
 ## Kill switch: ⌃⌥⌘K
 
@@ -166,9 +177,10 @@ its label.
 | `Aim.maxSpeedX` / `maxSpeedY` | 1500 / 1000 | Full speed in screen points per second. |
 | `Aim.curveExponent` | 1.8 | Response curve: 1 = straight line; higher = slower and more precise near the center. |
 | `Aim.smoothingTime` | 0.05 s | Eases speed changes between camera frames. 0 = none. |
-| `Snake.pressDegrees` | 10° | Head movement needed for one Snake turn. |
-| `Snake.neutralDegrees` | 5° | How close to center your head must come back before the next turn. |
-| `Snake.holdTime` | 0.050 s | Hold time for Snake turns (shorter than normal, for speed). |
+| `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s, on | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed, auto-recenter). Normally just use the sliders. |
+| `Snake.driftZoneDegrees` / `driftTimeConstant` | 2° / 2 s | Auto-recenter only acts within this zone, and takes about this long. |
+| `Snake.reverseFlickBlock` | 0.25 s | After re-arming, ignore flicks the opposite way for this long (stops the swing back from turning). |
+| `Recenter.keyCode` / `modifiers` | ⌃⌥⌘R | The recenter hotkey. |
 | `Smoothing.minCutoff` | 2.5 | Jitter removal when still. Lower = smoother but laggier. |
 | `Smoothing.beta` / `expressionBeta` | 0.1 / 0.03 | How quickly smoothing turns off when the head / face moves fast. |
 | `Smoothing.enabled` | true | `false` uses raw values (fastest, most jittery). |
@@ -198,6 +210,9 @@ its label.
 - **Control** ON/OFF, the kill-switch hotkey, why input is blocked (if it is),
   and what's held right now.
 - **Mode** picker: Keys / Aim (mouse) / Snake.
+- **Snake tuning** (Snake mode only): Recenter button; "Right now" lines that
+  say exactly why a turn isn't firing; last turn and its frame → key latency;
+  live sliders; your values with a Copy button.
 - **Calibration** status, your neutral face, and "jitter" (how much each value
   wobbled while you held still; small is good). Orange warnings mean a reading
   is noisy compared with its threshold.
@@ -224,12 +239,14 @@ Sources/FaceController/
                 OneEuroFilter.swift (smoothing)
   Calibration/  Calibrator.swift: records your neutral face
   Gestures/     GestureCatalog.swift (gestures, modes, bindings),
-                ThresholdGesture.swift (hysteresis + hold time → press / release)
+                ThresholdGesture.swift (hysteresis + hold time → press / release),
+                SnakeController.swift (Snake rules + saved slider settings)
   Aim/          AimController.swift: head → mouse speed (deadzone, curve, 120 Hz output)
   Input/        VirtualInput.swift: CGEvent keys, mouse button and movement; tracks what's held
   Engine/       ControlEngine.swift: the tight loop, camera → Vision → gestures → output
   Safety/       GlobalHotKey.swift (kill switch), ExitGuard.swift (release on quit), Permissions.swift
-  UI/           DebugView.swift, GestureTable.swift, DirectionPad.swift, Components.swift, CameraPreview.swift
+  UI/           DebugView.swift, SnakePanel.swift, GestureTable.swift, DirectionPad.swift,
+                Components.swift, CameraPreview.swift
   Support/      Config.swift (ALL tunable numbers and key mappings), Timing.swift
 ```
 

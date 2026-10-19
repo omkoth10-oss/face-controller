@@ -20,7 +20,7 @@ bigger now (three columns). If it doesn't fit your screen, it scrolls.
 |---|---|---|---|
 | **Keys** | up = hold Space, left = hold A, right = hold D | hold left mouse button | hold E |
 | **Aim (mouse)** | moves the mouse pointer like a joystick | hold left mouse button | hold E |
-| **Snake** | up/down/left/right = one tap of ↑ ↓ ← → | off | off |
+| **Snake** | up/down/left/right (or a quick flick) = one tap of ↑ ↓ ← → | off | off |
 
 Switching mode releases everything. The kill switch **⌃⌥⌘K** still turns all of
 it off from any app.
@@ -136,27 +136,58 @@ Mode = **Aim (mouse)**. Start on the desktop.
 📋 **Report:** best sensitivity; does it drift when still?; too slow / too fast
 near the center; did it work in a game (which); jittery or smooth?
 
-## 7. Google Snake (10 min)
+## 7. Google Snake (15 min)
 
-1. In Chrome, search Google for **snake** and click **Play** on the Snake game.
-2. In the debug window, set Mode = **Snake**. (Calibrate again with C if you moved.)
-3. Click the Snake game once so it has keyboard focus, keep your head centered.
+**What changed since your last test:** each direction now re-arms on its own as
+soon as you come partway back (no more "both axes within 5°"); a quick head
+**flick** fires a turn immediately; the press threshold starts at 5°; Snake uses
+lighter smoothing and skips the mouth/eyebrow work; your neutral slowly follows
+your posture while you rest; and there's an instant **Recenter**. Everything is
+tunable live in the **Snake tuning** panel (right column), and your values are
+saved between launches.
 
-- [ ] Turn your head left → the snake turns **left** (one turn, not several).
-- [ ] Right, up, down each give **one** turn in the right direction.
-- [ ] After a turn, nothing else fires until your head comes back to the center
-      (the Mode box shows "bring your head back to the center"). Then the next
-      turn works.
-- [ ] Quick moves: turn left and immediately back. Does it register?
-- [ ] Play 5 games. Best score?
+### Setup
 
-If turns feel late, lower `Snake.holdTime` (e.g. 0.03) or `Snake.pressDegrees`
-(e.g. 8). If you get double turns (often from overshooting the center on the
-way back), raise `Snake.pressDegrees` (e.g. 12) or lower `Snake.neutralDegrees`
-(e.g. 4) so "center" is stricter.
+1. In Chrome, search Google for **snake** and click **Play**.
+2. In the debug window, set Mode = **Snake**.
+3. Sit naturally, look at the game, and press **⌃⌥⌘R** (Recenter). You'll hear a
+   short sound. Do this whenever your posture changes.
+4. Click the Snake game once so it has keyboard focus.
 
-📋 **Report:** best score; missed turns?; double turns?; wrong-direction turns?;
-does returning to center feel natural or slow?
+### Play
+
+- [ ] A small, quick head movement left/right/up/down turns the snake (**one**
+      turn per movement).
+- [ ] You can chain turns: e.g. turn left, then tilt up without fully centering.
+- [ ] The **Right now** lines in the Snake panel say **ready** (green dots) when
+      you're back near the center. If a turn didn't fire, read the line: it says
+      exactly why (e.g. "waiting: left/right still at 4.2° toward LEFT, needs
+      < 2.3° to re-arm").
+- [ ] Play 5 games. Note your best score.
+
+### Tuning guide (do it while playing; changes apply instantly)
+
+Change **one slider at a time**, play a game, and keep it if it's better.
+
+| Problem | Try |
+|---|---|
+| Have to move my head too far | Lower **Press threshold** (e.g. 4°). Too low = turns you didn't mean. |
+| Turns feel late / laggy | Lower **Smoothing** (e.g. 10–20%), lower **Hold time** (e.g. 0–20 ms), or lower **Flick speed** (e.g. 45°/s) so gentler flicks count. Watch "Frame → key" in the panel. |
+| Second turn doesn't fire | Raise **Re-arm** (e.g. 60%) so a smaller move back re-arms. Check the "Right now" line. |
+| Double turns / a turn on the way back | Lower **Re-arm** (e.g. 35%), raise **Flick speed**, or raise **Hold time** a little. |
+| Random turns while sitting still | Raise **Smoothing** (e.g. 40%) or **Press threshold**; make sure Auto-recenter is on; press Recenter. |
+| Neutral seems to wander off | Press Recenter. If it keeps happening, turn Auto-recenter off and see if it's better. |
+
+The **head speed** under each "Right now" line shows how fast you move: a
+deliberate flick should be well above the Flick speed, sitting still well below.
+
+📋 **Report:**
+- Best score (before and after tuning)
+- Your values: click **Copy** at the bottom of the Snake panel and paste them
+- Frame → key average (Snake panel)
+- Turns: total and how many by flick (Snake panel)
+- Missed turns? Double turns? Wrong-direction turns?
+- Which "Right now" message did you see most when a turn didn't fire?
 
 ## 8. Quick game check (optional, 5 min)
 
@@ -192,8 +223,11 @@ Safety: kill switch __  face lost __  mode switch __  quit __  aim stops __
 Aim: best sensitivity __  drift when still? __  feel near center __
      worked in a game? (which) __  smooth or jittery __
 
-Snake: best score __  missed turns __  double turns __  wrong direction __
-       return-to-center feel __
+Snake: best score before tuning __  after tuning __
+       values (Copy button): __
+       frame -> key avg __ ms   turns __ (by flick __)
+       missed turns __  double turns __  wrong direction __
+       most common "Right now" message when a turn didn't fire: __
 
 What felt worst / what made you want to stop using it:
 Anything else:
