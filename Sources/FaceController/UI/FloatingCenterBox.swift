@@ -72,36 +72,55 @@ struct FloatingCenterBox: View {
 }
 
 /// Snake's Turn log: every turn that fired (with its latency) and every turn that
-/// was held back (with the reason). Newest at the top.
+/// was held back or not sent, in RED with the exact reason. Newest at the top.
 struct TurnLogView: View {
     let entries: [TurnLogEntry]
 
+    private var blockedCount: Int { entries.filter { !$0.fired }.count }
+
     var body: some View {
         GroupBox(label: Text("Turn log (newest first)")) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 if entries.isEmpty {
                     Text("No turns yet.")
                         .foregroundColor(.secondary)
+                } else if blockedCount > 0 {
+                    Text("\(blockedCount) of the last \(entries.count) turns did NOT go through (red).")
+                        .font(.caption.bold())
+                        .foregroundColor(.red)
                 }
                 ForEach(entries) { entry in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(entry.fired ? "✓" : "✗")
-                            .foregroundColor(entry.fired ? .green : .orange)
-                        Text(entry.time)
-                            .foregroundColor(.secondary)
-                        Text(entry.text)
-                            .foregroundColor(entry.fired ? .primary : .orange)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 4)
-                        if let latency = entry.latencyMs {
-                            Text(String(format: "%.0f ms", latency))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    row(entry)
                 }
             }
-            .font(.system(.caption, design: .monospaced))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private func row(_ entry: TurnLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(entry.fired ? "✓" : "✗")
+                .font(.system(.callout, design: .monospaced).bold())
+                .foregroundColor(entry.fired ? .green : .white)
+            Text(entry.time)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(entry.fired ? .secondary : .white)
+            Text(entry.text)
+                .font(.system(.callout, design: .monospaced))
+                .fontWeight(entry.fired ? .regular : .bold)
+                .foregroundColor(entry.fired ? .primary : .white)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if let latency = entry.latencyMs {
+                Text(String(format: "%.0f ms", latency))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(entry.fired ? Color.clear : Color.red.opacity(0.85))
+        .cornerRadius(4)
     }
 }

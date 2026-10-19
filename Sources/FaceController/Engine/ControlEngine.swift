@@ -51,6 +51,8 @@ final class ControlEngine {
     private var snakeStatus = SnakeStatus()
     private var snakeLatencies = RollingAverage()
     private var lastSnakeTurnAt: Double?
+    /// When the last Snake tap was (or is scheduled to be) sent, for spacing taps.
+    private var lastSnakeTapSlot = -Double.infinity
     private var turnLogCounter = 0
     /// Snake: an attempted turn while input is blocked was already logged.
     private var blockedByInputLogged = false
@@ -431,40 +433,71 @@ final class ControlEngine {
 
     /// Snake mode: one arrow-key TAP per turn. The rules live in SnakeController.
     private func runSnake(offset: PlayerHeadOffset, timing: FrameTiming) {
-        let now = timing.arrival
-        let result = snake.update(offset: offset, at: now)
+        let result = snake.update(offset: offset, at: timing.arrival)
 
         for blocked in result.blocked {
             snakeStatus.blockedCount += 1
-            addTurnLog("\(SnakeController.name(of: blocked.gesture)) blocked: \(blocked.reason)",
+            addTurnLog("\(SnakeController.name(of: blocked.gesture)) BLOCKED: \(blocked.reason)",
                        fired: false, latencyMs: nil)
         }
-
-        if let turn = result.turn, let binding = mode.bindings[turn.gesture] {
-            let name = SnakeController.name(of: turn.gesture)
-            if input.tap(binding.action, duration: Config.Snake.tapDuration) {
-                recordOutputEvent(timing: timing)
-                let latency = snapshot.lastOutputLatencyMs
-                if let latency = latency {
-                    snakeLatencies.add(latency)
-                    snakeStatus.lastTurnLatencyMs = latency
-                }
-                lastTapAt[turn.gesture] = now
-                lastSnakeTurnAt = now
-                lastHeadOutputAt = now
-                snakeStatus.turnCount += 1
-                let how = turn.viaFlick ? "by flick (\(Int(turn.speed))°/s)" : "by position"
-                if turn.viaFlick { snakeStatus.flickTurnCount += 1 }
-                snakeStatus.lastTurn = "\(name) \(how)"
-                addTurnLog("\(name) \(how)", fired: true, latencyMs: latency)
-            } else {
-                addTurnLog("\(name) not sent: input blocked", fired: false, latencyMs: nil)
-            }
+        for turn in result.turns {
+            scheduleSnakeTurn(turn, timing: timing)
         }
-
-        if result.turn != nil || !result.blocked.isEmpty {
+        if !result.turns.isEmpty || !result.blocked.isEmpty {
             publish(force: true)
         }
+    }
+
+    /// SPACING, not dropping: if a turn comes less than "min time between turns"
+    /// after the previous one, it's sent a few milliseconds LATER instead of being
+    /// thrown away. So "left, then immediately up" always arrives as two key presses.
+    private func scheduleSnakeTurn(_ turn: SnakeTurn, timing: FrameTiming) {
+        let now = HostClock.now()
+        let slot = max(now, lastSnakeTapSlot + snake.settings.minTurnInterval)
+        lastSnakeTapSlot = slot
+        lastHeadOutputAt = timing.arrival  // Floating center waits after turns.
+
+        let delay = slot - now
+        if delay <= 0.001 {
+            sendSnakeTurn(turn, timing: timing, delay: 0)
+        } else {
+            queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.sendSnakeTurn(turn, timing: timing, delay: delay)
+            }
+        }
+    }
+
+    /// Actually taps the arrow key (runs on the tracking queue).
+    private func sendSnakeTurn(_ turn: SnakeTurn, timing: FrameTiming, delay: Double) {
+        let name = SnakeController.name(of: turn.gesture)
+        guard mode == .snake, let binding = mode.bindings[turn.gesture] else {
+            addTurnLog("\(name) NOT SENT: left Snake mode", fired: false, latencyMs: nil)
+            return
+        }
+        if input.tap(binding.action, duration: Config.Snake.tapDuration) {
+            recordOutputEvent(timing: timing)
+            let latency = snapshot.lastOutputLatencyMs
+            if let latency = latency {
+                snakeLatencies.add(latency)
+                snakeStatus.lastTurnLatencyMs = latency
+            }
+            let now = HostClock.now()
+            lastTapAt[turn.gesture] = now
+            lastSnakeTurnAt = now
+            snakeStatus.turnCount += 1
+            if turn.viaFlick { snakeStatus.flickTurnCount += 1 }
+            var how = turn.viaFlick ? "by flick (\(Int(turn.speed))°/s)" : "by position"
+            if delay > 0 {
+                how += String(format: ", sent %.0f ms later to space it from the previous turn", delay * 1000)
+            }
+            snakeStatus.lastTurn = "\(name) \(how)"
+            addTurnLog("\(name) \(how)", fired: true, latencyMs: latency)
+        } else {
+            let reason = input.currentBlockReasons.first?.rawValue ?? "input blocked"
+            snakeStatus.blockedCount += 1
+            addTurnLog("\(name) NOT SENT: \(reason)", fired: false, latencyMs: nil)
+        }
+        publish(force: true)
     }
 
     /// While input is blocked (e.g. control OFF), log ONE line when you try to turn,
@@ -530,14 +563,18 @@ final class ControlEngine {
             // Inside the deadzone, so the pointer never moves while the center follows.
             return min(Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone)
         case .snake:
-            return snake.settings.rearmDegrees
+            // Stricter than the re-arm zone: only a head that's really back at center.
+            return snake.settings.rearmDegrees * Config.FloatingCenter.snakeZoneFraction
         }
     }
 
     /// Non-nil when the center must NOT move: something is firing, held or moving.
     private func floatingCenterBusyReason(now: Double) -> String? {
-        if now - lastHeadOutputAt < Config.FloatingCenter.pauseAfterOutput {
-            return "a direction just fired"
+        // Snake waits longer after a turn: the head is often still turned or
+        // returning, and following then would make the NEXT turn need extra movement.
+        let pause = mode == .snake ? Config.FloatingCenter.snakePauseAfterTurn : Config.FloatingCenter.pauseAfterOutput
+        if now - lastHeadOutputAt < pause {
+            return mode == .snake ? "a turn just fired" : "a direction just fired"
         }
         switch mode {
         case .keys:

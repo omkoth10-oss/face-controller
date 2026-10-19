@@ -142,9 +142,9 @@ enum Config {
     // MARK: - Snake mode
 
     /// Snake has its own fast, forgiving rules (see SnakeController.swift).
-    /// The first five values are only the STARTING values of the live sliders in the
-    /// debug window: once you move a slider, your value is saved and used instead.
-    /// ("Reset to defaults" in the window goes back to these.)
+    /// The `default...` values are only the STARTING values of the live sliders and
+    /// switches in the debug window: once you change one, your value is saved and
+    /// used instead. ("Reset to defaults" in the window goes back to these.)
     enum Snake {
         /// Turn/tilt this many degrees from center to fire a turn.
         static let defaultPressDegrees: Double = 5
@@ -158,6 +158,15 @@ enum Config {
         /// A quick head flick at least this fast (degrees per second) fires a turn
         /// right away, before you reach the press threshold. 0 = flicks off.
         static let defaultFlickSpeed: Double = 60
+        /// Minimum time between two turns. A turn that comes sooner is DELAYED by the
+        /// rest of this time (never dropped), so fast combos like "left, then up"
+        /// always arrive as two separate key presses.
+        static let defaultMinTurnInterval: Double = 0.045
+        /// Optional safety blocks, OFF by default: Google Snake already ignores a turn
+        /// straight back (180°) and a repeat of the direction you're going, so extra
+        /// taps are harmless, while these blocks were eating real fast turns.
+        static let defaultBounceBlockEnabled = false
+        static let defaultSameDirectionBlockEnabled = false
 
         /// Slider ranges.
         static let pressRange: ClosedRange<Double> = 2...12
@@ -165,6 +174,7 @@ enum Config {
         static let holdRange: ClosedRange<Double> = 0...0.15
         static let smoothingRange: ClosedRange<Double> = 0...1
         static let flickSpeedRange: ClosedRange<Double> = 0...200
+        static let minTurnIntervalRange: ClosedRange<Double> = 0...0.15
 
         /// A flick only counts once the head is at least this fraction of the press
         /// threshold away from center (ignores tiny twitches).
@@ -173,15 +183,12 @@ enum Config {
         /// AND the frame before was already moving the same way at this fraction of it.
         /// (Saves a frame compared with waiting for the two-frame average.)
         static let flickOnsetFraction: Double = 0.5
-        /// BOUNCE-BACK block: right after an axis re-arms, a turn in the OPPOSITE
-        /// direction on that axis is ignored for this long (flick or position). That's
-        /// the swing back to center. (Snake can't reverse anyway, so nothing is lost.)
+        /// BOUNCE-BACK block (only if switched on): right after an axis re-arms, a turn
+        /// in the OPPOSITE direction on that axis is ignored for this long.
         static let bounceBlock: Double = 0.35
-        /// DOUBLE-TURN block: the same direction can't fire twice within this time.
+        /// DOUBLE-TURN block (only if switched on): the same direction can't fire
+        /// twice within this time.
         static let sameDirectionCooldown: Double = 0.25
-        /// At most one turn per this many seconds (stops one diagonal move from
-        /// firing two turns at once).
-        static let minTurnInterval: Double = 0.10
         /// How long each tap holds the arrow key down before releasing it.
         static let tapDuration: Double = 0.030
         /// How many lines the Turn log keeps.
@@ -211,8 +218,13 @@ enum Config {
         /// How close to the center counts as "resting near center":
         /// Keys mode: this fraction of the smallest head press threshold (10° → 5°).
         /// Aim mode: inside the aim deadzone (so the pointer never moves).
-        /// Snake mode: inside the re-arm zone.
+        /// Snake mode: this fraction of the re-arm zone (stricter, see below).
         static let keysZoneFraction: Double = 0.5
+        static let snakeZoneFraction: Double = 0.5
+        /// Snake: after a turn, the center waits this long before it may follow, so
+        /// a head that's still settling after a turn can't drag the center toward
+        /// that side (which would make the next turn need extra movement).
+        static let snakePauseAfterTurn: Double = 0.8
     }
 
     // MARK: - Recenter

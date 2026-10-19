@@ -11,9 +11,14 @@ struct SnakeSettings: Codable, Equatable {
     var holdTime = Config.Snake.defaultHoldTime
     var smoothing = Config.Snake.defaultSmoothing
     var flickSpeed = Config.Snake.defaultFlickSpeed
+    var minTurnInterval = Config.Snake.defaultMinTurnInterval
+    /// Optional safety blocks (off by default, switches in the Snake panel).
+    var bounceBlockEnabled = Config.Snake.defaultBounceBlockEnabled
+    var sameDirectionBlockEnabled = Config.Snake.defaultSameDirectionBlockEnabled
 
     enum CodingKeys: String, CodingKey {
         case pressDegrees, rearmFraction, holdTime, smoothing, flickSpeed
+        case minTurnInterval, bounceBlockEnabled, sameDirectionBlockEnabled
     }
 
     /// Degrees below which an axis re-arms after a turn.
@@ -38,7 +43,8 @@ struct SnakeSettings: Codable, Equatable {
         let numbers = String(format: "press %.1f°, re-arm %.0f%%, hold %.0f ms, smoothing %.0f%%",
                              pressDegrees, rearmFraction * 100, holdTime * 1000, smoothing * 100)
         let flick = flickSpeed > 0 ? String(format: "%.0f°/s", flickSpeed) : "off"
-        return "\(numbers), flick \(flick)"
+        let spacing = String(format: "%.0f ms", minTurnInterval * 1000)
+        return "\(numbers), flick \(flick), min gap \(spacing), bounce block \(bounceBlockEnabled ? "on" : "off"), double-turn block \(sameDirectionBlockEnabled ? "on" : "off")"
     }
 
     /// Keeps every value inside its slider range (e.g. after loading old saved values).
@@ -49,6 +55,7 @@ struct SnakeSettings: Codable, Equatable {
         copy.holdTime = Self.clamp(holdTime, Config.Snake.holdRange)
         copy.smoothing = Self.clamp(smoothing, Config.Snake.smoothingRange)
         copy.flickSpeed = Self.clamp(flickSpeed, Config.Snake.flickSpeedRange)
+        copy.minTurnInterval = Self.clamp(minTurnInterval, Config.Snake.minTurnIntervalRange)
         return copy
     }
 
@@ -95,6 +102,11 @@ extension SnakeSettings {
         holdTime = try container.decodeIfPresent(Double.self, forKey: .holdTime) ?? defaults.holdTime
         smoothing = try container.decodeIfPresent(Double.self, forKey: .smoothing) ?? defaults.smoothing
         flickSpeed = try container.decodeIfPresent(Double.self, forKey: .flickSpeed) ?? defaults.flickSpeed
+        minTurnInterval = try container.decodeIfPresent(Double.self, forKey: .minTurnInterval) ?? defaults.minTurnInterval
+        bounceBlockEnabled = try container.decodeIfPresent(Bool.self, forKey: .bounceBlockEnabled)
+            ?? defaults.bounceBlockEnabled
+        sameDirectionBlockEnabled = try container.decodeIfPresent(Bool.self, forKey: .sameDirectionBlockEnabled)
+            ?? defaults.sameDirectionBlockEnabled
     }
 }
 
@@ -120,9 +132,10 @@ enum SnakeAxisResult {
 /// Because the two axes are independent, you can chain "left" then "up" without
 /// first bringing your head all the way back to the center.
 ///
-/// Two safety blocks stop turns you didn't mean:
+/// Two OPTIONAL safety blocks (off by default; Google Snake ignores 180° reversals
+/// and repeated directions itself, so they mostly ate real fast turns):
 /// - BOUNCE-BACK: just after re-arming, a turn the OPPOSITE way on this axis is
-///   ignored for a moment (that's your head swinging back past the center).
+///   ignored for a moment (your head swinging back past the center).
 /// - DOUBLE TURN: the same direction can't fire twice in quick succession.
 struct SnakeAxis {
     enum Phase: Equatable {
@@ -172,10 +185,8 @@ struct SnakeAxis {
         return false
     }
 
-    /// Feeds one frame. `globalBlock` (e.g. "too soon after the last turn") stops
-    /// any turn from firing this frame and is reported if a turn wanted to fire.
-    mutating func update(value: Double, at time: Double, settings: SnakeSettings,
-                         globalBlock: String?) -> SnakeAxisResult? {
+    /// Feeds one frame. Returns a fired or blocked turn, or nil.
+    mutating func update(value: Double, at time: Double, settings: SnakeSettings) -> SnakeAxisResult? {
         self.value = value
         updateSpeeds(value: value, time: time)
 
@@ -241,7 +252,7 @@ struct SnakeAxis {
         guard wantsTurn else { return nil }
 
         // Held back? Report it once per attempt; it may still fire once the block ends.
-        if let reason = blockReason(sign: sign, at: time) ?? globalBlock {
+        if let reason = blockReason(sign: sign, at: time, settings: settings) {
             if reportedBlock { return nil }
             reportedBlock = true
             return .blocked(sign: sign, reason: reason)
@@ -319,13 +330,17 @@ struct SnakeAxis {
         return byAverage || byOnset
     }
 
-    /// Bounce-back and double-turn protection for this axis.
-    private func blockReason(sign: Double, at time: Double) -> String? {
-        if lastFiredSign != 0, sign == -lastFiredSign, time - rearmedAt < Config.Snake.bounceBlock {
-            return "bounce-back after \(name(for: lastFiredSign)) (head swinging back)"
+    /// Optional bounce-back and double-turn protection for this axis.
+    private func blockReason(sign: Double, at time: Double, settings: SnakeSettings) -> String? {
+        if settings.bounceBlockEnabled, lastFiredSign != 0, sign == -lastFiredSign,
+           time - rearmedAt < Config.Snake.bounceBlock {
+            return String(format: "bounce-back block: opposite of %@ within %.0f ms of re-arming",
+                          name(for: lastFiredSign) as NSString, Config.Snake.bounceBlock * 1000)
         }
-        if lastFiredSign != 0, sign == lastFiredSign, time - lastFiredAt < Config.Snake.sameDirectionCooldown {
-            return "same direction again too soon (double turn)"
+        if settings.sameDirectionBlockEnabled, lastFiredSign != 0, sign == lastFiredSign,
+           time - lastFiredAt < Config.Snake.sameDirectionCooldown {
+            return String(format: "double-turn block: same direction within %.0f ms",
+                          Config.Snake.sameDirectionCooldown * 1000)
         }
         return nil
     }
@@ -349,16 +364,18 @@ struct SnakeBlockedTurn {
 
 /// What Snake did this frame.
 struct SnakeFrameResult {
-    var turn: SnakeTurn?
+    /// Turns that fired this frame, most active direction first. Usually 0 or 1;
+    /// 2 when you move diagonally (e.g. left and up at once): BOTH are sent.
+    var turns: [SnakeTurn] = []
     var blocked: [SnakeBlockedTurn] = []
 }
 
-/// Snake mode logic: two independent axes, at most one turn per frame.
+/// Snake mode logic: two independent axes. Both may fire in the same frame; the
+/// engine spaces the key taps apart (min time between turns), it never drops one.
 struct SnakeController {
     var settings: SnakeSettings
     private(set) var horizontal = SnakeAxis(positiveName: "LEFT", negativeName: "RIGHT", axisName: "left/right")
     private(set) var vertical = SnakeAxis(positiveName: "UP", negativeName: "DOWN", axisName: "up/down")
-    private var lastTurnTime = -Double.infinity
 
     init(settings: SnakeSettings) {
         self.settings = settings
@@ -366,25 +383,18 @@ struct SnakeController {
 
     /// Feeds one frame of head offset (your point of view).
     mutating func update(offset: PlayerHeadOffset, at time: Double) -> SnakeFrameResult {
-        let tooSoon = time - lastTurnTime < Config.Snake.minTurnInterval
-            ? "too soon after the last turn"
-            : nil
-
-        // Give the axis you're moving more a chance to fire first.
+        // The axis you're moving more goes first (its tap is sent first).
         let horizontalFirst = activity(offset.left, speed: horizontal.speed)
             >= activity(offset.up, speed: vertical.speed)
 
         var result = SnakeFrameResult()
         if horizontalFirst {
-            handle(updateHorizontal(offset.left, at: time, globalBlock: tooSoon), into: &result)
-            let sameMoment = result.turn.map { "\(Self.name(of: $0.gesture)) fired at the same moment" }
-            handle(updateVertical(offset.up, at: time, globalBlock: tooSoon ?? sameMoment), into: &result)
+            handle(updateHorizontal(offset.left, at: time), into: &result)
+            handle(updateVertical(offset.up, at: time), into: &result)
         } else {
-            handle(updateVertical(offset.up, at: time, globalBlock: tooSoon), into: &result)
-            let sameMoment = result.turn.map { "\(Self.name(of: $0.gesture)) fired at the same moment" }
-            handle(updateHorizontal(offset.left, at: time, globalBlock: tooSoon ?? sameMoment), into: &result)
+            handle(updateVertical(offset.up, at: time), into: &result)
+            handle(updateHorizontal(offset.left, at: time), into: &result)
         }
-        if result.turn != nil { lastTurnTime = time }
         return result
     }
 
@@ -422,17 +432,15 @@ struct SnakeController {
         return max(byPosition, bySpeed)
     }
 
-    private mutating func updateHorizontal(_ value: Double, at time: Double,
-                                           globalBlock: String?) -> (SnakeAxisResult, Axis, Double)? {
-        guard let result = horizontal.update(value: value, at: time, settings: settings, globalBlock: globalBlock) else {
+    private mutating func updateHorizontal(_ value: Double, at time: Double) -> (SnakeAxisResult, Axis, Double)? {
+        guard let result = horizontal.update(value: value, at: time, settings: settings) else {
             return nil
         }
         return (result, .horizontal, abs(horizontal.speed))
     }
 
-    private mutating func updateVertical(_ value: Double, at time: Double,
-                                         globalBlock: String?) -> (SnakeAxisResult, Axis, Double)? {
-        guard let result = vertical.update(value: value, at: time, settings: settings, globalBlock: globalBlock) else {
+    private mutating func updateVertical(_ value: Double, at time: Double) -> (SnakeAxisResult, Axis, Double)? {
+        guard let result = vertical.update(value: value, at: time, settings: settings) else {
             return nil
         }
         return (result, .vertical, abs(vertical.speed))
@@ -443,7 +451,7 @@ struct SnakeController {
         let (axisResult, axis, speed) = update
         switch axisResult {
         case .fired(let sign, let viaFlick):
-            result.turn = SnakeTurn(gesture: Self.gesture(axis: axis, sign: sign), viaFlick: viaFlick, speed: speed)
+            result.turns.append(SnakeTurn(gesture: Self.gesture(axis: axis, sign: sign), viaFlick: viaFlick, speed: speed))
         case .blocked(let sign, let reason):
             result.blocked.append(SnakeBlockedTurn(gesture: Self.gesture(axis: axis, sign: sign), reason: reason))
         }

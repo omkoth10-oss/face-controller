@@ -116,6 +116,17 @@ struct SnakePanel: View {
             })
     }
 
+    /// A binding for one of the on/off switches in the Snake settings.
+    private func toggle(_ keyPath: WritableKeyPath<SnakeSettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { model.snakeSettings[keyPath: keyPath] },
+            set: { newValue in
+                var updated = model.snakeSettings
+                updated[keyPath: keyPath] = newValue
+                controller.setSnakeSettings(updated)
+            })
+    }
+
     private var sliders: some View {
         VStack(alignment: .leading, spacing: 6) {
             sliderRow("Press threshold",
@@ -140,6 +151,33 @@ struct SnakePanel: View {
                       value: setting(\.flickSpeed), range: Config.Snake.flickSpeedRange, step: 5,
                       text: settings.flickSpeed < 1 ? "off" : String(format: "%.0f°/s", settings.flickSpeed),
                       help: "A quick head flick this fast fires right away. Lower = gentler flicks count. 0 = off.")
+            sliderRow("Min time between turns",
+                      value: setting(\.minTurnInterval), range: Config.Snake.minTurnIntervalRange, step: 0.005,
+                      text: String(format: "%.0f ms", settings.minTurnInterval * 1000),
+                      help: "Two turns closer than this are spaced out: the second is sent a little later, never dropped.")
+
+            Text("Optional blocks (off = nothing gets eaten; Google Snake ignores reversals and repeats itself)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: toggle(\.bounceBlockEnabled)) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Block bounce-back turns")
+                    Text(String(format: "Ignore the opposite direction for %.0f ms after re-arming.",
+                                Config.Snake.bounceBlock * 1000))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Toggle(isOn: toggle(\.sameDirectionBlockEnabled)) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Block double turns")
+                    Text(String(format: "Ignore the same direction twice within %.0f ms.",
+                                Config.Snake.sameDirectionCooldown * 1000))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
             Text("The center following your head (auto-recenter) is now the Floating center setting in the middle column.")
                 .font(.caption)
                 .foregroundColor(.secondary)
