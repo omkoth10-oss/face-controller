@@ -145,19 +145,20 @@ enum Config {
     /// The `default...` values are only the STARTING values of the live sliders and
     /// switches in the debug window: once you change one, your value is saved and
     /// used instead. ("Reset to defaults" in the window goes back to these.)
+    /// The defaults are the owner's tuned values from playing Google Snake (2026-10-19).
     enum Snake {
         /// Turn/tilt this many degrees from center to fire a turn.
-        static let defaultPressDegrees: Double = 5
+        static let defaultPressDegrees: Double = 8.5
         /// After a turn, that axis re-arms once your head comes back below this
         /// fraction of the press threshold (0.45 = 45%). Only the axis that fired is checked.
         static let defaultRearmFraction: Double = 0.45
         /// Stay past the press threshold this long before a turn fires (flicks skip this).
-        static let defaultHoldTime: Double = 0.030
+        static let defaultHoldTime: Double = 0.040
         /// 0 = no smoothing (fastest, most jitter), 1 = heavy smoothing (slowest).
-        static let defaultSmoothing: Double = 0.3
+        static let defaultSmoothing: Double = 0.25
         /// A quick head flick at least this fast (degrees per second) fires a turn
         /// right away, before you reach the press threshold. 0 = flicks off.
-        static let defaultFlickSpeed: Double = 60
+        static let defaultFlickSpeed: Double = 80
         /// Minimum time between two turns. A turn that comes sooner is DELAYED by the
         /// rest of this time (never dropped), so fast combos like "left, then up"
         /// always arrive as two separate key presses.
@@ -221,7 +222,8 @@ enum Config {
         static let defaultEnabled = true
         /// Starting value of the "Follow time" slider: about how many seconds the center
         /// takes to catch up with your resting head. Lower = follows faster.
-        static let defaultFollowTime: Double = 2.0
+        /// (1.5 s = the owner's value from testing.)
+        static let defaultFollowTime: Double = 1.5
         static let followTimeRange: ClosedRange<Double> = 0.3...8
         /// Your head must be still (slower than this, degrees per second)...
         static let stillSpeed: Double = 15
@@ -231,8 +233,10 @@ enum Config {
         /// settling movement isn't mistaken for a rest.
         static let pauseAfterOutput: Double = 0.3
         /// How close to the center counts as "resting near center":
-        /// Keys mode: this fraction of the smallest head press threshold (10° → 5°).
-        /// Aim mode: inside the aim deadzone (so the pointer never moves).
+        /// Keys mode (and Minecraft option 2 in MOVE): this fraction of the smallest
+        /// head press threshold (10° → 5°).
+        /// Aim mode (and Minecraft while the head aims): inside the aim deadzone (so
+        /// the pointer never moves).
         /// Snake mode: this fraction of the re-arm zone (stricter, see below).
         static let keysZoneFraction: Double = 0.5
         static let snakeZoneFraction: Double = 0.5
@@ -240,6 +244,79 @@ enum Config {
         /// a head that's still settling after a turn can't drag the center toward
         /// that side (which would make the next turn need extra movement).
         static let snakePauseAfterTurn: Double = 0.8
+    }
+
+    // MARK: - Minecraft preset (Phase 3: the head moves AND aims)
+
+    /// For Minecraft Classic in the browser (classic.minecraft.net): W A S D walk,
+    /// Space jumps, the mouse looks around, left click breaks a block.
+    /// Three switchable options decide how the head shares moving and aiming (pick
+    /// one in the Minecraft panel; see HeadOptions.swift). The `default...` values are
+    /// only the starting values of the panel's controls (your changes are saved).
+    enum Minecraft {
+        static let defaultOption: HeadOption = .faceMoves
+
+        // Keys used by the preset.
+        static let walkForward = OutputBinding.hold(.key(CGKeyCode(kVK_ANSI_W)), "W")
+        static let walkBack = OutputBinding.hold(.key(CGKeyCode(kVK_ANSI_S)), "S")
+        static let walkLeft = OutputBinding.hold(.key(CGKeyCode(kVK_ANSI_A)), "A")
+        static let walkRight = OutputBinding.hold(.key(CGKeyCode(kVK_ANSI_D)), "D")
+        static let jump = OutputBinding.hold(.key(CGKeyCode(kVK_Space)), "Space")
+        static let breakBlock = OutputBinding.hold(.leftMouseButton, "left click")
+
+        /// Option 1 "Face moves, head aims": the head ONLY looks around; the face walks.
+        static let faceMovesBindings: [GestureID: OutputBinding] = [
+            .mouthOpen: walkForward,
+            .eyebrowsRaise: jump,
+        ]
+        /// Options 2 and 3: the face does actions...
+        static let actionBindings: [GestureID: OutputBinding] = [
+            .mouthOpen: breakBlock,
+            .eyebrowsRaise: jump,
+        ]
+        /// ...and the head walks (option 2 in MOVE; option 3 in the outer zone).
+        /// Your up = forward, like pushing a joystick.
+        static let headWalkBindings: [GestureID: OutputBinding] = [
+            .tiltUp: walkForward,
+            .tiltDown: walkBack,
+            .turnLeft: walkLeft,
+            .turnRight: walkRight,
+        ]
+
+        // Option 2 "Mode switch".
+        /// Tilt your head toward either shoulder this far (degrees of roll) to switch
+        /// the head between MOVE and AIM. Nothing else uses this tilt, so it rarely
+        /// happens by accident.
+        static let defaultSwitchTiltDegrees: Double = 15
+        static let switchTiltRange: ClosedRange<Double> = 8...30
+        /// Hold the tilt this long to switch (filters out a twitch).
+        static let switchHoldTime: Double = 0.15
+        /// Come back below this fraction of the switch tilt before you can switch again.
+        static let switchReleaseFraction: Double = 0.5
+        /// While your head is tilted past this fraction of the switch tilt, the head's
+        /// moving/aiming pauses, so the switch gesture itself can't walk or aim.
+        static let switchPauseFraction: Double = 0.5
+        /// The head's job when you pick option 2 (AIM: nothing is held until you switch).
+        static let startHeadJob: HeadJob = .aim
+        /// Sounds for the switch (macOS system sounds), so you know without looking.
+        static let moveSound = "Submarine"
+        static let aimSound = "Glass"
+        /// In MOVE: turn/tilt this far to walk (press), release at this fraction of it.
+        static let defaultMoveDegrees: Double = 8
+        static let moveRange: ClosedRange<Double> = 4...15
+        static let moveReleaseFraction: Double = 0.6
+        static let moveHoldTime: Double = 0.060
+
+        // Option 3 "Split zones".
+        /// Inside this many degrees the head only aims; past it, it ALSO walks that way.
+        static let defaultWalkZoneDegrees: Double = 11
+        static let walkZoneRange: ClosedRange<Double> = 5...20
+        /// Stop walking once back below this fraction of the walk zone.
+        static let walkReleaseFraction: Double = 0.75
+        static let walkHoldTime: Double = 0.080
+
+        /// Small always-on-top label (MOVE / AIM, what's held) shown over the game.
+        static let defaultOverlayEnabled = true
     }
 
     // MARK: - Recenter
@@ -252,7 +329,7 @@ enum Config {
         static let description = "⌃⌥⌘R  (Control + Option + Command + R)"
     }
 
-    // MARK: - Head-to-mouse aiming (Aim mode)
+    // MARK: - Head-to-mouse aiming (Aim mode, and Minecraft while the head aims)
 
     /// The head works like a joystick: the further you turn/tilt past the deadzone,
     /// the faster the pointer moves. Return to neutral and it stops.

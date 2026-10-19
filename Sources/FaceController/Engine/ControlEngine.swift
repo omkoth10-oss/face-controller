@@ -22,6 +22,8 @@ final class ControlEngine {
 
     /// Called on `queue` with a fresh copy of the state (about 30 times a second).
     var onSnapshot: ((EngineSnapshot) -> Void)?
+    /// Called on `queue` when Minecraft option 2 switches the head's job (for the sound).
+    var onHeadJobSwitch: ((HeadJob) -> Void)?
 
     private let input: VirtualInput
     private let aim: AimController
@@ -32,6 +34,9 @@ final class ControlEngine {
     private var calibration: CalibrationResult?
 
     private var mode: ControlMode = Config.Mapping.startMode
+    /// What every gesture does right now: the mode's bindings, or in Minecraft the
+    /// head option's (and option 2's current MOVE/AIM job). Set by refreshBindings().
+    private var bindings: [GestureID: OutputBinding] = [:]
     /// One detector per gesture (thresholds depend on the mode).
     private var gestures: [GestureID: ThresholdGesture] = [:]
     /// Latest value of every gesture (relative to neutral), for the debug window.
@@ -67,6 +72,15 @@ final class ControlEngine {
     private var framesMirrored = false
     private var aimState = AimState()
 
+    // Minecraft preset (see HeadOptions.swift).
+    private var minecraft = MinecraftSettings()
+    /// Option 2's tilt-to-switch gesture and the head's current job (MOVE / AIM).
+    private var headSwitch = HeadJobSwitch(tiltDegrees: Config.Minecraft.defaultSwitchTiltDegrees)
+    /// True while the head is tilted toward a shoulder (switching): its moving and
+    /// aiming pause so the switch gesture can't walk or turn the camera.
+    private var headPaused = false
+    private var latestTilt: Double?
+
     private var lastFaceSeenAt: Double?
     private var lastExpressionsAt: Double?
     private var lastFrameAt: Double?
@@ -100,7 +114,7 @@ final class ControlEngine {
     init(input: VirtualInput, aim: AimController) {
         self.input = input
         self.aim = aim
-        gestures = Self.makeGestures(for: mode)
+        refreshBindings()
     }
 
     // MARK: - Public (safe to call from any thread)
@@ -108,7 +122,7 @@ final class ControlEngine {
     /// Starts the first calibration and the safety watchdog.
     func start() {
         queue.async {
-            self.aim.setActive(self.mode.headMovesMouse)
+            self.aim.setActive(self.mode.usesAim)
             self.beginCalibration()
             self.startWatchdog()
         }
@@ -136,9 +150,11 @@ final class ControlEngine {
             guard newMode != self.mode else { return }
             self.mode = newMode
             self.input.releaseAll()
-            self.aim.setActive(newMode.headMovesMouse)
+            self.aim.setActive(newMode.usesAim)
             self.aimState = AimState()
-            self.gestures = Self.makeGestures(for: newMode)
+            self.headSwitch = HeadJobSwitch(tiltDegrees: self.minecraft.switchTiltDegrees)
+            self.headPaused = false
+            self.refreshBindings()
             self.lastTapAt.removeAll()
             self.snake.requireReturn()
             self.snakeFilter.reset()
@@ -162,6 +178,46 @@ final class ControlEngine {
                 self.snakeFilter.reset()  // Don't blend in stale values when turning smoothing on.
             }
             self.publish(force: true)
+        }
+    }
+
+    /// New Minecraft preset settings (head option, its sliders, overlay).
+    /// A new option or walk threshold releases everything and starts the head fresh.
+    func setMinecraftSettings(_ settings: MinecraftSettings) {
+        queue.async {
+            let old = self.minecraft
+            self.minecraft = settings
+            if settings.switchTiltDegrees != old.switchTiltDegrees {
+                self.headSwitch.setTiltDegrees(settings.switchTiltDegrees)
+            }
+            guard self.mode == .minecraft else { return }
+            let optionChanged = settings.option != old.option
+            let walkChanged = settings.moveDegrees != old.moveDegrees
+                || settings.walkZoneDegrees != old.walkZoneDegrees
+            if optionChanged {
+                self.headSwitch = HeadJobSwitch(tiltDegrees: settings.switchTiltDegrees)
+            }
+            if optionChanged || walkChanged {
+                self.input.releaseAll()
+                self.aim.stopMoving()
+                self.aimState = AimState(sensitivity: self.aim.currentSensitivity)
+                self.headPaused = false
+                self.refreshBindings()
+                self.floatingCenter.reset()
+                if optionChanged {
+                    self.logEvent("Minecraft: \(settings.option.title) (everything released)")
+                }
+            }
+            self.publish(force: true)
+        }
+    }
+
+    /// Option 2's "Switch now" button: flips MOVE ↔ AIM without the gesture.
+    func toggleHeadJob() {
+        queue.async {
+            guard self.mode == .minecraft, self.minecraft.option == .modeSwitch else { return }
+            self.headSwitch.toggle()
+            self.headJobDidSwitch(now: HostClock.now(), how: "Switch button")
         }
     }
 
@@ -321,6 +377,8 @@ final class ControlEngine {
         }
         snapshot.relativeAngles = relative
         snapshot.playerOffset = offset
+        let tilt = PlayerDirections.shoulderTilt(relative: relative)
+        latestTilt = tilt
 
         var values: [GestureID: Double] = [
             .tiltUp: offset.up,
@@ -341,7 +399,8 @@ final class ControlEngine {
         if input.isBlocked {
             resetAllGestures(requireNeutral: true)
             aim.stopMoving()
-            aimState = AimState(active: mode.headMovesMouse, sensitivity: aim.currentSensitivity)
+            headPaused = false
+            aimState = AimState(active: headAimsNow, sensitivity: aim.currentSensitivity)
             floatingCenter.markOff("paused: \(input.currentBlockReasons.first?.rawValue ?? "input blocked")")
             if mode == .snake { logSnakeAttemptWhileBlocked(offset) }
             return
@@ -349,14 +408,15 @@ final class ControlEngine {
         blockedByInputLogged = false
 
         switch mode {
-        case .keys, .aim:
+        case .keys:
             runHoldGestures(values: values, timing: timing)
+        case .aim:
+            runHoldGestures(values: values, timing: timing)
+            aimState = aim.update(offset: offset, at: now)
         case .snake:
             runSnake(offset: offset, timing: timing)
-        }
-
-        if mode.headMovesMouse {
-            aimState = aim.update(offset: offset, at: now)
+        case .minecraft:
+            runMinecraft(values: values, offset: offset, tilt: tilt, timing: timing)
         }
 
         // Last: let the center follow your head if it's resting (never while busy).
@@ -371,6 +431,7 @@ final class ControlEngine {
         snapshot.playerOffset = nil
         snapshot.expressions = nil
         latestValues = [:]
+        latestTilt = nil
 
         if calibrator.isCollecting {
             calibrator.faceMissing()
@@ -394,7 +455,7 @@ final class ControlEngine {
         var changed = false
 
         for gesture in GestureID.allCases {
-            guard let binding = mode.bindings[gesture], var detector = gestures[gesture] else { continue }
+            guard let binding = bindings[gesture], var detector = gestures[gesture] else { continue }
             defer { gestures[gesture] = detector }
 
             guard let value = values[gesture] else {
@@ -431,6 +492,76 @@ final class ControlEngine {
         }
 
         if changed { publish(force: true) }
+    }
+
+    /// Minecraft preset: who walks and who aims depends on the head option
+    /// (HeadOptions.swift). The face's actions run the same way in every option.
+    private func runMinecraft(values: [GestureID: Double], offset: PlayerHeadOffset,
+                              tilt: Double, timing: FrameTiming) {
+        let now = timing.arrival
+        var gestureValues = values
+        headPaused = false
+
+        if minecraft.option == .modeSwitch {
+            if headSwitch.update(tilt: tilt, at: now) {
+                headJobDidSwitch(now: now, how: "head tilted toward a shoulder")
+            }
+            // Tilting to switch: pause the head's walking and aiming, so the switch
+            // gesture itself can't walk or turn the camera.
+            if headSwitch.isTilting {
+                headPaused = true
+                releaseHeadKeys()
+                for gesture in GestureID.allCases where gesture.isHeadGesture {
+                    gestureValues[gesture] = nil
+                }
+            }
+        }
+
+        // Head walk keys (options 2 in MOVE and 3) and the face's actions.
+        runHoldGestures(values: gestureValues, timing: timing)
+
+        // Head aiming (options 1 and 3 always, option 2 in AIM).
+        if headAimsNow && !headPaused {
+            aimState = aim.update(offset: offset, at: now)
+        } else {
+            aim.stopMoving()
+            aimState = AimState(active: false, sensitivity: aim.currentSensitivity)
+        }
+    }
+
+    /// Option 2 just switched MOVE ↔ AIM: let go of everything, start the new job fresh,
+    /// and tell the app (sound + overlay).
+    private func headJobDidSwitch(now: Double, how: String) {
+        input.releaseAll()
+        aim.stopMoving()
+        aimState = AimState(sensitivity: aim.currentSensitivity)
+        refreshBindings()
+        lastHeadOutputAt = now
+        floatingCenter.reset()
+        let job = headSwitch.job
+        logEvent("Head job: \(job.title) (\(how); everything released)")
+        onHeadJobSwitch?(job)
+        publish(force: true)
+    }
+
+    /// Lets go of the head's keys (e.g. W A S D) and makes them wait for neutral.
+    private func releaseHeadKeys() {
+        for gesture in GestureID.allCases where gesture.isHeadGesture {
+            if let binding = bindings[gesture], binding.style == .hold, input.isHeld(binding.action) {
+                input.release(binding.action)
+                lastHeadOutputAt = HostClock.now()
+            }
+            gestures[gesture]?.reset(requireNeutral: true)
+        }
+    }
+
+    /// Does the head move the mouse right now?
+    private var headAimsNow: Bool {
+        switch mode {
+        case .aim: return true
+        case .minecraft: return minecraft.headAims(job: headSwitch.job)
+        case .keys, .snake: return false
+        }
     }
 
     /// Snake mode: one arrow-key TAP per turn. The rules live in SnakeController.
@@ -481,7 +612,7 @@ final class ControlEngine {
     /// Actually taps the arrow key (runs on the tracking queue).
     private func sendSnakeTurn(_ turn: SnakeTurn, timing: FrameTiming, delay: Double) {
         let name = SnakeController.name(of: turn.gesture)
-        guard mode == .snake, let binding = mode.bindings[turn.gesture] else {
+        guard mode == .snake, let binding = bindings[turn.gesture] else {
             addTurnLog("\(name) NOT SENT: left Snake mode", fired: false, latencyMs: nil)
             return
         }
@@ -579,17 +710,29 @@ final class ControlEngine {
     private func floatingCenterZone() -> Double {
         switch mode {
         case .keys:
-            let presses = GestureID.allCases
-                .filter { $0.isHeadGesture && mode.bindings[$0] != nil }
-                .map { $0.thresholds.press }
-            return (presses.min() ?? Config.Gestures.tiltUp.press) * Config.FloatingCenter.keysZoneFraction
+            return headKeyZone()
         case .aim:
             // Inside the deadzone, so the pointer never moves while the center follows.
             return min(Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone)
         case .snake:
             // Stricter than the re-arm zone: only a head that's really back at center.
             return snake.settings.rearmDegrees * Config.FloatingCenter.snakeZoneFraction
+        case .minecraft:
+            // Aiming: inside the deadzone (option 3's walk zone is further out still).
+            // Option 2 in MOVE: like Keys mode.
+            if headAimsNow {
+                return min(Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone)
+            }
+            return headKeyZone()
         }
+    }
+
+    /// Half of the smallest press threshold among the head's keys.
+    private func headKeyZone() -> Double {
+        let presses = GestureID.allCases
+            .filter { $0.isHeadGesture && bindings[$0] != nil }
+            .map { thresholds(for: $0).press }
+        return (presses.min() ?? Config.Gestures.tiltUp.press) * Config.FloatingCenter.keysZoneFraction
     }
 
     /// Non-nil when the center must NOT move: something is firing, held or moving.
@@ -600,22 +743,22 @@ final class ControlEngine {
         if now - lastHeadOutputAt < pause {
             return mode == .snake ? "a turn just fired" : "a direction just fired"
         }
-        switch mode {
-        case .keys:
-            for gesture in GestureID.allCases where gesture.isHeadGesture {
-                guard let binding = mode.bindings[gesture], let detector = gestures[gesture] else { continue }
-                switch detector.phase {
-                case .active: return "\(binding.label) held"
-                case .holding: return "\(binding.label) about to fire"
-                case .ready, .waitingForNeutral: continue
-                }
-            }
-        case .aim:
-            if aimState.speedX != 0 || aimState.speedY != 0 { return "pointer moving" }
-        case .snake:
+        if mode == .snake {
             if snake.isHolding { return "a turn is about to fire" }
             if !snake.bothArmed { return "a direction is re-arming" }
+            return nil
         }
+        // A head key held or about to fire (Keys mode, Minecraft options 2 and 3).
+        for gesture in GestureID.allCases where gesture.isHeadGesture {
+            guard let binding = bindings[gesture], let detector = gestures[gesture] else { continue }
+            switch detector.phase {
+            case .active: return "\(binding.label) held"
+            case .holding: return "\(binding.label) about to fire"
+            case .ready, .waitingForNeutral: continue
+            }
+        }
+        if headAimsNow, aimState.speedX != 0 || aimState.speedY != 0 { return "pointer moving" }
+        if mode == .minecraft, headPaused { return "head tilted toward a shoulder" }
         return nil
     }
 
@@ -629,15 +772,28 @@ final class ControlEngine {
         snapshot.outputEventCount += 1
     }
 
-    private static func makeGestures(for mode: ControlMode) -> [GestureID: ThresholdGesture] {
+    /// Works out what every gesture does now and builds fresh detectors for it (each
+    /// waits for neutral first). The old detectors are thrown away, so the CALLER
+    /// must release anything they held first.
+    private func refreshBindings() {
+        bindings = mode == .minecraft ? minecraft.bindings(job: headSwitch.job) : mode.bindings
         var result: [GestureID: ThresholdGesture] = [:]
         for gesture in GestureID.allCases {
-            let thresholds = mode.thresholds(for: gesture)
-            result[gesture] = ThresholdGesture(pressThreshold: thresholds.press,
-                                               releaseThreshold: thresholds.release,
-                                               holdTime: thresholds.holdTime)
+            let limits = thresholds(for: gesture)
+            result[gesture] = ThresholdGesture(pressThreshold: limits.press,
+                                               releaseThreshold: limits.release,
+                                               holdTime: limits.holdTime)
         }
-        return result
+        gestures = result
+    }
+
+    /// Press / release / hold time for a gesture in the current mode.
+    /// (Snake's head turns use SnakeController's own live settings instead.)
+    private func thresholds(for gesture: GestureID) -> GestureThresholds {
+        if mode == .minecraft, gesture.isHeadGesture, let walk = minecraft.headWalkThresholds {
+            return walk
+        }
+        return gesture.thresholds
     }
 
     private func resetAllGestures(requireNeutral: Bool) {
@@ -645,6 +801,7 @@ final class ControlEngine {
             gestures[gesture]?.reset(requireNeutral: requireNeutral)
         }
         snake.requireReturn()
+        headSwitch.requireNeutral()
     }
 
     // MARK: - Calibration
@@ -705,7 +862,7 @@ final class ControlEngine {
         guard missingFor > Config.Safety.faceLostTimeout else { return }
 
         for gesture in GestureID.allCases where !gesture.isHeadGesture {
-            if let binding = mode.bindings[gesture], input.isHeld(binding.action) {
+            if let binding = bindings[gesture], input.isHeld(binding.action) {
                 input.release(binding.action)
                 logEvent("Released \(binding.label): mouth/eyebrows not readable")
             }
@@ -764,6 +921,16 @@ final class ControlEngine {
         if mode == .snake {
             snapshot.snake = makeSnakeStatus(now: now)
         }
+        if mode == .minecraft {
+            snapshot.minecraft = MinecraftStatus(option: minecraft.option,
+                                                 headJob: headSwitch.job,
+                                                 headAims: headAimsNow,
+                                                 headPaused: headPaused,
+                                                 tilt: latestTilt,
+                                                 switchTiltDegrees: headSwitch.tiltDegrees,
+                                                 switchPhase: headSwitch.phase,
+                                                 switchCount: headSwitch.switchCount)
+        }
         var floating = FloatingCenterStatus(enabled: floatingSettings.isEnabled(for: mode),
                                             state: floatingCenter.state,
                                             isFollowing: floatingCenter.isFollowing)
@@ -775,9 +942,9 @@ final class ControlEngine {
             snapshot.centerShift = nil
         }
         snapshot.floatingCenter = floating
-        snapshot.aim = mode.headMovesMouse ? aimState : AimState(sensitivity: aim.currentSensitivity)
+        snapshot.aim = headAimsNow ? aimState : AimState(sensitivity: aim.currentSensitivity)
         snapshot.gestures = GestureID.allCases.map { gesture in
-            let binding = mode.bindings[gesture]
+            let binding = bindings[gesture]
             var firing = false
             if let binding = binding {
                 switch binding.style {
@@ -792,7 +959,7 @@ final class ControlEngine {
             }
             return GestureSnapshot(gesture: gesture,
                                    value: latestValues[gesture],
-                                   thresholds: mode.thresholds(for: gesture),
+                                   thresholds: thresholds(for: gesture),
                                    binding: binding,
                                    phase: gestures[gesture]?.phase ?? .ready,
                                    firing: firing)

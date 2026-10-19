@@ -33,4 +33,11 @@ enum PlayerDirections {
 
         return PlayerHeadOffset(left: left, up: up)
     }
+
+    /// How far the head is tilted toward EITHER shoulder (roll), in degrees.
+    /// Used by Minecraft option 2's switch gesture. Either shoulder counts the same,
+    /// so mirroring doesn't matter here.
+    static func shoulderTilt(relative: HeadAngles) -> Double {
+        abs(relative.roll)
+    }
 }

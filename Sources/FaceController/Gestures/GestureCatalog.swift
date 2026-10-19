@@ -93,14 +93,17 @@ struct OutputBinding {
     }
 }
 
-/// The three ways the app can map your face to the game. Switch in the debug window.
+/// The ways the app can map your face to the game. Switch in the debug window.
 enum ControlMode: String, CaseIterable, Identifiable {
     /// Head = Space / A / D keys, expressions = mouse click + E.
     case keys
-    /// Head = mouse aiming, expressions = mouse click + E. (Head can't do both yet; Phase 3.)
+    /// Head = mouse aiming, expressions = mouse click + E.
     case aim
     /// Head up/down/left/right = one tap of the arrow keys, for Google Snake.
     case snake
+    /// Minecraft preset: the head moves AND aims, in one of three switchable ways
+    /// (HeadOptions.swift).
+    case minecraft
 
     var id: String { rawValue }
 
@@ -109,24 +112,22 @@ enum ControlMode: String, CaseIterable, Identifiable {
         case .keys: return "Keys"
         case .aim: return "Aim (mouse)"
         case .snake: return "Snake"
+        case .minecraft: return "Minecraft"
         }
     }
 
     /// Which gestures do what in this mode (edit these in Config.Mapping).
+    /// Minecraft's depend on the head option you pick, so they come from
+    /// `MinecraftSettings.bindings(job:)` instead.
     var bindings: [GestureID: OutputBinding] {
         switch self {
         case .keys: return Config.Mapping.keys
         case .aim: return Config.Mapping.aim
         case .snake: return Config.Mapping.snake
+        case .minecraft: return [:]
         }
     }
 
-    /// Thresholds for a gesture in Keys and Aim modes.
-    /// (Snake's head turns use SnakeController with the live slider settings instead.)
-    func thresholds(for gesture: GestureID) -> GestureThresholds {
-        gesture.thresholds
-    }
-
-    /// True when the head moves the mouse instead of pressing keys.
-    var headMovesMouse: Bool { self == .aim }
+    /// True when the head can move the mouse in this mode (the aim timer runs).
+    var usesAim: Bool { self == .aim || self == .minecraft }
 }

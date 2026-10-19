@@ -18,6 +18,8 @@ final class DebugModel: ObservableObject {
     @Published var snakeSettings = SnakeSettings.load()
     /// Floating center on/off per mode + follow time (loaded from the last launch).
     @Published var floatingCenterSettings = FloatingCenterSettings.load()
+    /// Minecraft preset: head option and its sliders (loaded from the last launch).
+    @Published var minecraftSettings = MinecraftSettings.load()
     @Published var recenterHotKeyRegistered = false
 }
 
@@ -40,6 +42,8 @@ final class AppController {
 
     private var killSwitch: GlobalHotKey?
     private var recenterHotKey: GlobalHotKey?
+    /// The MOVE / AIM label over the game (created the first time it's needed).
+    private var overlay: GameOverlay?
     private var permissionTimer: Timer?
     private var controlEnabled = Config.Safety.startWithControlOn
     private var cameraStartRequested = false
@@ -74,9 +78,18 @@ final class AppController {
                 self?.model.engine = snapshot
             }
         }
+        engine.onHeadJobSwitch = { job in
+            // Called on the tracking queue. A different sound for each job, so you
+            // know which one you're in without looking.
+            DispatchQueue.main.async {
+                NSSound(named: job == .move ? Config.Minecraft.moveSound : Config.Minecraft.aimSound)?.play()
+            }
+        }
         engine.setSnakeSettings(model.snakeSettings)
         engine.setFloatingCenterSettings(model.floatingCenterSettings)
+        engine.setMinecraftSettings(model.minecraftSettings)
         engine.start()
+        updateOverlay()
 
         registerKillSwitch()
         registerRecenterHotKey()
@@ -95,6 +108,7 @@ final class AppController {
         ExitGuard.releaseEverything()  // Release keys FIRST, before anything else.
         permissionTimer?.invalidate()
         permissionTimer = nil
+        overlay?.setVisible(false)
         killSwitch = nil
         recenterHotKey = nil
         // The camera is closed automatically when the process exits. We don't wait
@@ -123,13 +137,14 @@ final class AppController {
         engine.recalibrate()
     }
 
-    /// Keys / Aim / Snake. Releases everything immediately, then switches.
+    /// Keys / Aim / Snake / Minecraft. Releases everything immediately, then switches.
     func setMode(_ mode: ControlMode) {
         guard mode != model.mode else { return }
         model.mode = mode
         input.releaseAll()
         aim.stopMoving()
         engine.setMode(mode)
+        updateOverlay()
     }
 
     func setAimSensitivity(_ value: Double) {
@@ -163,6 +178,34 @@ final class AppController {
         model.floatingCenterSettings = clamped
         clamped.save()
         engine.setFloatingCenterSettings(clamped)
+    }
+
+    /// Minecraft preset changes (head option, sliders, overlay): used now and saved.
+    func setMinecraftSettings(_ settings: MinecraftSettings) {
+        let clamped = settings.clamped()
+        guard clamped != model.minecraftSettings else { return }
+        model.minecraftSettings = clamped
+        clamped.save()
+        engine.setMinecraftSettings(clamped)
+        updateOverlay()
+    }
+
+    func resetMinecraftSettings() {
+        setMinecraftSettings(MinecraftSettings())
+    }
+
+    /// Option 2's "Switch now" button (the engine plays the sound).
+    func toggleHeadJob() {
+        engine.toggleHeadJob()
+    }
+
+    /// The overlay shows in the Minecraft preset, unless switched off.
+    private func updateOverlay() {
+        let show = model.mode == .minecraft && model.minecraftSettings.overlayEnabled
+        if show && overlay == nil {
+            overlay = GameOverlay(model: model)
+        }
+        overlay?.setVisible(show)
     }
 
     private func registerKillSwitch() {

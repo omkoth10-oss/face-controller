@@ -20,8 +20,8 @@ struct DebugView: View {
                         preview
                         cameraInfo
                         GroupBox(label: Text("Direction (your point of view)")) {
-                            DirectionPad(offset: snap.playerOffset, centerShift: snap.centerShift, mode: snap.mode,
-                                         snakePressDegrees: model.snakeSettings.pressDegrees)
+                            DirectionPad(offset: snap.playerOffset, centerShift: snap.centerShift,
+                                         boxHalfWidth: padBox.width, boxHalfHeight: padBox.height)
                                 .frame(maxWidth: .infinity)
                         }
                         performanceBox
@@ -50,6 +50,9 @@ struct DebugView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if snap.mode == .snake {
                             SnakePanel(model: model, controller: controller)
+                        } else if snap.mode == .minecraft {
+                            MinecraftPanel(model: model, controller: controller)
+                            aimBox
                         } else {
                             aimBox
                         }
@@ -60,6 +63,34 @@ struct DebugView: View {
                 }
             }
             .padding(16)
+        }
+    }
+
+    /// The Direction pad's dashed box (degrees): where things fire in this mode, or
+    /// the aim deadzone when the head aims.
+    private var padBox: (width: Double, height: Double) {
+        let deadzone = (width: Config.Aim.horizontalDeadzone, height: Config.Aim.verticalDeadzone)
+        switch snap.mode {
+        case .keys:
+            return (width: Config.Gestures.turnLeft.press, height: Config.Gestures.tiltUp.press)
+        case .aim:
+            return deadzone
+        case .snake:
+            return (width: model.snakeSettings.pressDegrees, height: model.snakeSettings.pressDegrees)
+        case .minecraft:
+            let settings = model.minecraftSettings
+            switch settings.option {
+            case .faceMoves:
+                return deadzone
+            case .modeSwitch:
+                if snap.minecraft.headJob == .move {
+                    return (width: settings.moveDegrees, height: settings.moveDegrees)
+                }
+                return deadzone
+            case .splitZones:
+                // The walk zone: inside it the head only aims.
+                return (width: settings.walkZoneDegrees, height: settings.walkZoneDegrees)
+            }
         }
     }
 
@@ -219,9 +250,11 @@ struct DebugView: View {
         case .keys:
             return "Head presses movement keys, face does actions."
         case .aim:
-            return "Head moves the mouse like a joystick. Space/A/D are off (head can't do both until Phase 3)."
+            return "Head moves the mouse like a joystick. Space/A/D are off (the Minecraft preset tries ways for the head to do both)."
         case .snake:
             return "For Google Snake: each turn or quick flick of your head taps one arrow key. After a turn, that direction re-arms as soon as you come partway back. Tune it live in the Snake panel (right). Expressions are off."
+        case .minecraft:
+            return "For Minecraft Classic (classic.minecraft.net): the head walks AND looks around, in one of three ways. Pick the head option in the Minecraft panel (right)."
         }
     }
 
@@ -349,10 +382,15 @@ struct DebugView: View {
     private var aimBox: some View {
         GroupBox(label: Text("Head-to-mouse aiming")) {
             VStack(alignment: .leading, spacing: 6) {
-                if snap.mode != .aim {
-                    Text("Off. Pick “Aim (mouse)” in Mode to test aiming.")
+                if !snap.mode.usesAim {
+                    Text("Off. Pick “Aim (mouse)” or “Minecraft” in Mode to use aiming.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                } else if !snap.aim.active {
+                    Text("Not aiming right now (calibrating, no face, Minecraft option 2 in MOVE, or head tilted to switch).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
                     Text("Sensitivity")
@@ -370,7 +408,7 @@ struct DebugView: View {
                     GridRow {
                         Text("Left / right")
                         Text(DisplayFormat.degrees(snap.playerOffset?.left)).monospacedDigit()
-                        Text(snap.mode == .aim
+                        Text(snap.aim.active
                              ? speedText(snap.aim.speedX, inDeadzone: snap.aim.inDeadzoneX, positive: "→", negative: "←")
                              : "—")
                             .monospacedDigit()
@@ -378,7 +416,7 @@ struct DebugView: View {
                     GridRow {
                         Text("Up / down")
                         Text(DisplayFormat.degrees(snap.playerOffset?.up)).monospacedDigit()
-                        Text(snap.mode == .aim
+                        Text(snap.aim.active
                              ? speedText(snap.aim.speedY, inDeadzone: snap.aim.inDeadzoneY, positive: "↑", negative: "↓")
                              : "—")
                             .monospacedDigit()

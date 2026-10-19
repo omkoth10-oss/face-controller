@@ -14,30 +14,14 @@ struct DirectionPad: View {
     let offset: PlayerHeadOffset?
     /// Where the floating center is, compared with the calibrated center.
     let centerShift: PlayerHeadOffset?
-    let mode: ControlMode
-    /// Snake's live press threshold (from its slider).
-    let snakePressDegrees: Double
+    /// Half the size of the dashed box, in degrees: where things fire in this mode
+    /// (press thresholds, or the aim deadzone). The debug window works these out.
+    let boxHalfWidth: Double
+    let boxHalfHeight: Double
 
     /// Degrees from neutral shown at the edge of the pad.
     private let range: Double = 20
     private let size: CGFloat = 150
-
-    /// Where the dashed box is: the press thresholds (Keys/Snake) or the deadzone (Aim).
-    private var boxHalfWidth: Double {
-        switch mode {
-        case .keys: return Config.Gestures.turnLeft.press
-        case .aim: return Config.Aim.horizontalDeadzone
-        case .snake: return snakePressDegrees
-        }
-    }
-
-    private var boxHalfHeight: Double {
-        switch mode {
-        case .keys: return Config.Gestures.tiltUp.press
-        case .aim: return Config.Aim.verticalDeadzone
-        case .snake: return snakePressDegrees
-        }
-    }
 
     var body: some View {
         VStack(spacing: 6) {

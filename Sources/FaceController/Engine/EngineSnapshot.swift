@@ -63,6 +63,22 @@ struct SnakeStatus {
     var turnLog: [TurnLogEntry] = []
 }
 
+/// Minecraft preset's live state, for the Minecraft panel and the game overlay.
+struct MinecraftStatus {
+    var option: HeadOption = Config.Minecraft.defaultOption
+    /// Option 2: what the head does right now.
+    var headJob: HeadJob = Config.Minecraft.startHeadJob
+    /// The head moves the mouse right now.
+    var headAims = true
+    /// Option 2: head tilted toward a shoulder, so its walking/aiming is paused.
+    var headPaused = false
+    /// How far the head is tilted toward either shoulder (degrees), nil = no face.
+    var tilt: Double?
+    var switchTiltDegrees = Config.Minecraft.defaultSwitchTiltDegrees
+    var switchPhase: GesturePhase = .waitingForNeutral
+    var switchCount = 0
+}
+
 /// A copy of everything the debug window shows, taken on the tracking queue and
 /// handed to the window. Because it's a plain value (a struct), the window can read
 /// it safely while the tracking loop keeps running on its own thread.
@@ -96,6 +112,8 @@ struct EngineSnapshot {
     var gestures: [GestureSnapshot] = []
     /// Snake mode's live state (only filled in Snake mode).
     var snake = SnakeStatus()
+    /// Minecraft preset's live state (only filled in Minecraft mode).
+    var minecraft = MinecraftStatus()
 
     // Aiming
     var aim = AimState()
