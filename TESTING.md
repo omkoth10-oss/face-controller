@@ -57,6 +57,43 @@ Look at the **Direction** pad (left column) while you move your head slowly.
 📋 **Report:** all four correct? (or which flip you needed); what the line under
 the camera says about frames being mirrored/unmirrored.
 
+## 1b. Floating center: does the center follow you? (5 min)
+
+**What it is:** when your head rests still near the center, the center slowly
+slides to where your head is, so leaning or slouching doesn't build up into
+accidental presses. It must NEVER move while something is firing or held, or
+while the pointer is moving. It's ON in every mode; the **Floating center** box
+(middle column) has an on/off switch for the current mode and a **Follow time**
+slider. On the Direction pad, the **purple ring** is the floating center and the
+grey cross is where you calibrated.
+
+In **Keys** mode (with TextEdit focused, or the debug window, either is fine):
+
+- [ ] Look straight, then shift your posture a little (lean or turn your chair a
+      few degrees) and rest there. Within ~2 s the purple ring slides under the
+      dot, and the Floating center line says **following your head (resting)**.
+- [ ] **Hold a turn:** turn left until **A HELD**, and keep holding for 5 s. A must
+      stay held the whole time; the ring must not move. The line says
+      **paused: A held**.
+- [ ] Tilt up to hold Space for 5 s: same, Space stays held.
+- [ ] Rest in a new position for a while, then come back: nothing fires by itself
+      on the way back.
+- [ ] Try the **Follow time** slider: 0.5 s (follows fast) vs. 5 s (slow).
+- [ ] Turn the switch off: the ring stops following. Turn it back on.
+
+In **Aim** mode (desktop):
+
+- [ ] Rest still near center: the pointer does not move, and the ring follows.
+- [ ] Turn your head so the pointer moves and keep it moving for a few seconds:
+      the ring does NOT move (line says **paused: pointer moving**), and the
+      pointer doesn't slow down by itself.
+
+In **Snake** mode: see section 7.
+
+📋 **Report:** did anything held ever release by itself? Did anything fire by
+itself after resting in a new position? Best Follow time? Does the ring follow
+when you want it to (or too much / too little)?
+
 ## 2. Expression readings: are Vision landmarks good enough? (5 min)
 
 This is the key question for mouth and eyebrows. Watch the **Gestures** table
@@ -138,13 +175,19 @@ near the center; did it work in a game (which); jittery or smooth?
 
 ## 7. Google Snake (15 min)
 
-**What changed since your last test:** each direction now re-arms on its own as
-soon as you come partway back (no more "both axes within 5°"); a quick head
-**flick** fires a turn immediately; the press threshold starts at 5°; Snake uses
-lighter smoothing and skips the mouth/eyebrow work; your neutral slowly follows
-your posture while you rest; and there's an instant **Recenter**. Everything is
-tunable live in the **Snake tuning** panel (right column), and your values are
-saved between launches.
+**What changed since your last test:**
+- The **floating center** (section 1b) replaces Snake's old auto-recenter, and is on
+  by default. In Snake it only follows while BOTH directions are ready (green
+  dots) and your head is inside the re-arm zone, so it can't eat a turn.
+- New **Turn log** (middle column, under Gestures): every turn with its time and
+  frame → key latency, and every turn that was held back, with the reason.
+- **Bounce-back block:** right after a direction re-arms, a turn the opposite
+  way on that axis (your head swinging back past the center) is ignored for
+  0.35 s. It shows in the log as "blocked: bounce-back after LEFT".
+- **Double-turn block:** the same direction can't fire twice within 0.25 s.
+- **Earlier flicks:** a flick can fire one camera frame sooner (as soon as the
+  movement clearly starts).
+- Your saved slider values carry over.
 
 ### Setup
 
@@ -163,6 +206,12 @@ saved between launches.
       you're back near the center. If a turn didn't fire, read the line: it says
       exactly why (e.g. "waiting: left/right still at 4.2° toward LEFT, needs
       < 2.3° to re-arm").
+- [ ] Watch the **Turn log** while you play. Every turn you meant should be a
+      ✓ line. Every ✗ line says why a turn was held back. Note which reasons show up.
+- [ ] Turn left and come back to center quickly: you should NOT get a RIGHT turn
+      (a "bounce-back" ✗ line is fine; it means the block worked).
+- [ ] Rest still for a few seconds: the purple ring on the Direction pad follows,
+      and nothing fires.
 - [ ] Play 5 games. Note your best score.
 
 ### Tuning guide (do it while playing; changes apply instantly)
@@ -175,8 +224,10 @@ Change **one slider at a time**, play a game, and keep it if it's better.
 | Turns feel late / laggy | Lower **Smoothing** (e.g. 10–20%), lower **Hold time** (e.g. 0–20 ms), or lower **Flick speed** (e.g. 45°/s) so gentler flicks count. Watch "Frame → key" in the panel. |
 | Second turn doesn't fire | Raise **Re-arm** (e.g. 60%) so a smaller move back re-arms. Check the "Right now" line. |
 | Double turns / a turn on the way back | Lower **Re-arm** (e.g. 35%), raise **Flick speed**, or raise **Hold time** a little. |
-| Random turns while sitting still | Raise **Smoothing** (e.g. 40%) or **Press threshold**; make sure Auto-recenter is on; press Recenter. |
-| Neutral seems to wander off | Press Recenter. If it keeps happening, turn Auto-recenter off and see if it's better. |
+| Random turns while sitting still | Raise **Smoothing** (e.g. 40%) or **Press threshold**; make sure the Floating center is on; press Recenter. |
+| Center seems to wander off | Press Recenter. Try a slower **Follow time** (Floating center box), or turn the floating center off for Snake and compare. |
+| A turn you meant shows as ✗ "too soon" or "double turn" | You moved again very quickly. Tell me how often it happens: those limits are in `Config.Snake` (`minTurnInterval`, `sameDirectionCooldown`). |
+| ✗ "bounce-back" when you really meant to reverse | Snake can't reverse anyway, so this should be harmless. Tell me if it ever blocks a turn that would have helped. |
 
 The **head speed** under each "Right now" line shows how fast you move: a
 deliberate flick should be well above the Flick speed, sitting still well below.
@@ -188,6 +239,8 @@ deliberate flick should be well above the Flick speed, sitting still well below.
 - Turns: total and how many by flick (Snake panel)
 - Missed turns? Double turns? Wrong-direction turns?
 - Which "Right now" message did you see most when a turn didn't fire?
+- Turn log: which ✗ reasons came up, and was any ✗ a turn you really wanted?
+- Did you still get double turns or bounce-back turns (a ✓ you didn't mean)?
 
 ## 8. Quick game check (optional, 5 min)
 
@@ -223,11 +276,16 @@ Safety: kill switch __  face lost __  mode switch __  quit __  aim stops __
 Aim: best sensitivity __  drift when still? __  feel near center __
      worked in a game? (which) __  smooth or jittery __
 
+Floating center: held keys stayed held? __  anything fired by itself? __
+       best Follow time __  follows too much / too little / right __
+
 Snake: best score before tuning __  after tuning __
        values (Copy button): __
        frame -> key avg __ ms   turns __ (by flick __)
        missed turns __  double turns __  wrong direction __
        most common "Right now" message when a turn didn't fire: __
+       Turn log ✗ reasons seen: __   any wanted turn blocked? __
+       unwanted ✓ turns (double / bounce-back)? __
 
 What felt worst / what made you want to stop using it:
 Anything else:

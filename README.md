@@ -96,11 +96,29 @@ and run `swift run` again.
   **Sensitivity** slider to adjust speed.
 - **Snake mode:** each head turn/tilt, or a quick **flick**, sends one arrow-key
   tap. After a turn, that direction's axis re-arms as soon as you come partway
-  back (the other axis stays ready, so you can chain "left, then up"). While your
-  head rests still near the center, neutral slowly follows your posture. All of
-  it is tunable live with sliders in the **Snake tuning** panel; your values are
-  saved between launches. See TESTING.md for a tuning guide.
+  back (the other axis stays ready, so you can chain "left, then up"). Turns
+  that would come from your head swinging back past the center ("bounce-back")
+  and accidental double turns are blocked. The **Turn log** lists every turn and
+  every blocked turn with the reason. All of it is tunable live with sliders in
+  the **Snake tuning** panel; your values are saved between launches. See
+  TESTING.md for a tuning guide.
 - Switching mode releases everything first.
+
+### Floating center (on in every mode)
+
+The center follows your head: when your head **rests still near the center**,
+the center slowly slides to where your head is, so leaning, slouching or moving
+your chair doesn't add up to accidental presses. Moves are measured from where
+you are now. It **never** moves while something is happening: a key held (A, D,
+Space), a turn about to fire or re-arming, or the pointer moving. "Near the
+center" means: Keys mode, within half the press threshold (5°); Aim mode, inside
+the deadzone (so the pointer can't move); Snake, inside the re-arm zone.
+
+The **Floating center** box (middle column) has an on/off switch for the current
+mode (each mode remembers its own) and a **Follow time** slider (how quickly the
+center catches up; default about 2 s). Both are saved. On the Direction pad the
+**purple ring** is the floating center; the grey cross is where you calibrated.
+**Recenter** (⌃⌥⌘R) snaps the center to your head instantly.
 
 ### Directions are from YOUR point of view
 
@@ -177,9 +195,14 @@ its label.
 | `Aim.maxSpeedX` / `maxSpeedY` | 1500 / 1000 | Full speed in screen points per second. |
 | `Aim.curveExponent` | 1.8 | Response curve: 1 = straight line; higher = slower and more precise near the center. |
 | `Aim.smoothingTime` | 0.05 s | Eases speed changes between camera frames. 0 = none. |
-| `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s, on | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed, auto-recenter). Normally just use the sliders. |
-| `Snake.driftZoneDegrees` / `driftTimeConstant` | 2° / 2 s | Auto-recenter only acts within this zone, and takes about this long. |
-| `Snake.reverseFlickBlock` | 0.25 s | After re-arming, ignore flicks the opposite way for this long (stops the swing back from turning). |
+| `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed). Normally just use the sliders. |
+| `Snake.bounceBlock` | 0.35 s | After re-arming, ignore turns the opposite way on that axis for this long (the swing back). |
+| `Snake.sameDirectionCooldown` | 0.25 s | The same direction can't fire twice within this time (double turns). |
+| `Snake.minTurnInterval` | 0.10 s | At most one turn per this many seconds. |
+| `Snake.flickMinFraction` / `flickOnsetFraction` | 0.3 / 0.5 | How far out a flick must be (fraction of press), and how "early" a flick may fire. |
+| `FloatingCenter.defaultEnabled` / `defaultFollowTime` | on / 2 s | Starting values of the Floating center switch and slider (your values are saved). |
+| `FloatingCenter.stillSpeed` / `restDwell` | 15°/s / 0.25 s | How still, and for how long, your head must rest before the center follows. |
+| `FloatingCenter.pauseAfterOutput` | 0.3 s | After a key/turn fires, the center waits this long. |
 | `Recenter.keyCode` / `modifiers` | ⌃⌥⌘R | The recenter hotkey. |
 | `Smoothing.minCutoff` | 2.5 | Jitter removal when still. Lower = smoother but laggier. |
 | `Smoothing.beta` / `expressionBeta` | 0.1 / 0.03 | How quickly smoothing turns off when the head / face moves fast. |
@@ -213,6 +236,11 @@ its label.
 - **Snake tuning** (Snake mode only): Recenter button; "Right now" lines that
   say exactly why a turn isn't firing; last turn and its frame → key latency;
   live sliders; your values with a Copy button.
+- **Floating center**: on/off for the current mode, Follow time slider, what the
+  center is doing right now ("following", "paused: A held", ...), and how far it
+  has moved.
+- **Turn log** (Snake mode only): each turn (✓, with time and latency) and each
+  blocked turn (✗, with the reason).
 - **Calibration** status, your neutral face, and "jitter" (how much each value
   wobbled while you held still; small is good). Orange warnings mean a reading
   is noisy compared with its threshold.
@@ -236,6 +264,7 @@ Sources/FaceController/
   Tracking/     HeadPoseTracker.swift (Vision → head angles + landmarks),
                 ExpressionReader.swift (landmarks → mouth / eyebrows),
                 PlayerDirections.swift (camera view → YOUR left/right/up/down),
+                FloatingCenter.swift (the center that follows your resting head),
                 OneEuroFilter.swift (smoothing)
   Calibration/  Calibrator.swift: records your neutral face
   Gestures/     GestureCatalog.swift (gestures, modes, bindings),
@@ -245,8 +274,8 @@ Sources/FaceController/
   Input/        VirtualInput.swift: CGEvent keys, mouse button and movement; tracks what's held
   Engine/       ControlEngine.swift: the tight loop, camera → Vision → gestures → output
   Safety/       GlobalHotKey.swift (kill switch), ExitGuard.swift (release on quit), Permissions.swift
-  UI/           DebugView.swift, SnakePanel.swift, GestureTable.swift, DirectionPad.swift,
-                Components.swift, CameraPreview.swift
+  UI/           DebugView.swift, SnakePanel.swift, FloatingCenterBox.swift (+ Turn log),
+                GestureTable.swift, DirectionPad.swift, Components.swift, CameraPreview.swift
   Support/      Config.swift (ALL tunable numbers and key mappings), Timing.swift
 ```
 
