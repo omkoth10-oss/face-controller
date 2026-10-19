@@ -35,7 +35,13 @@ Decide by prototyping and testing, not guessing.
 - macOS built-in Head Pointer: cursor/click only, not built for game keybinds.
 - Hawkeye Access: needs an iPhone TrueDepth camera.
 - GitHub hobby projects: code demos, not installable apps.
+- **PlayAbility** (strongest competitor): Windows only, webcam facial gestures (~50 expressions + custom), maps to keyboard/mouse/controller/Xbox Adaptive Controller. Paid subscription with a limited free tier (limits have changed over time). No Mac version.
+- **Google Project GameFace's repo was archived (read-only) on Sep 5, 2025.** There's room for an actively maintained open-source successor.
 - **No polished, gaming-first, Mac-friendly, fully face-controlled app exists.**
+- **How we win:** not more buttons than PlayAbility, but easier, more precise, more personalized, private (100% offline), open source, Mac-first, and completely free with nothing locked.
+
+## Long-term vision (from owner, 2026-10-18)
+"One system that turns whatever movements a person CAN make into whatever inputs a game NEEDS." An adaptive-input platform, not just a webcam controller. Build the core extremely well first; the backlog below grows it over time.
 
 ## Goals
 - Fun learning project + college application project.
@@ -114,6 +120,40 @@ All code is in `Sources/FaceController/`:
 
 Key question for every tester: **"What made you stop using it?"**
 
+## Ideas backlog (from owner, 2026-10-18)
+Ideas the owner wants to *maybe* build. Not committed: ask before building anything here that isn't already in the roadmap. Grouped by when they fit.
+
+**Fold into existing phases (high value, fits the plan)**
+- **Precision engine** (Phase 2–5): per-axis sensitivity, deadzone, anti-deadzone, acceleration/deceleration, customizable response curve (e.g. 0.5°→2%, 2°→10%, 5°→30%, 10°→70%, 15°→100%), smoothing, max speed, min movement threshold, axis inversion, recenter + recenter hotkey, temporary sensitivity modifier. Top technical priority for aiming.
+- **"What can you control?" calibration/onboarding** (Phase 4): guided steps (head left/right/up/down as far as comfortable, open mouth, blink each eye, eyebrows, smile) that learn comfortable range, max range, neutral, gesture reliability, and noise/tremor, then auto-build a profile. Possible killer feature.
+- **Tap / Hold / Toggle / Repeat** per gesture (Phase 4–5; extends feature 8).
+- **Control Tester** (Phase 4): live view of exactly which keys, mouse movement, and stick values the user's movements produce.
+- **Step-by-step troubleshooting** (Phase 4): Camera ✓ → Face tracking ✓ → Gesture ✓ → Output ✓ → Game ✕, in plain language.
+- **Latency breakdown visible in settings** (tracking / processing / output / total). Phase 1 already shows most of this.
+- **Advanced Mode** (Phase 4–5): raw landmarks, head pose, expression values, thresholds, curves, filters.
+- **Unlimited profiles + import/export** (Phase 5).
+- **100% offline, no account, no footage leaves the Mac**: a core promise (already true by design). Say it on the website.
+
+**Version 2 (after first release)**
+- Tremor filtering (Low/Medium/High/Custom, maybe adaptive to the user's baseline movement).
+- Gesture combos/chords (e.g. smile + head left = Q).
+- Auto-switch profiles when a game launches.
+- Community profile library on the website, tagged by ability ("head-only", "one-eye", "limited neck movement"), ideally made by people with those same limitations.
+- Website "Find your setup" questionnaire (what can you move? → recommended setup).
+- Game compatibility database built from real user test reports (never claim untested games).
+- Accessibility knowledge base ("limited neck movement → recommended inputs").
+- Real disabled gamers demonstrating their setups on the website.
+
+**Later / experimental (hard on Mac or with a webcam)**
+- Eye + head hybrid aiming (head = big moves, eyes = fine aim). Webcam eye tracking is imprecise; prototype and test before promising.
+- Virtual game controller (analog stick) output. macOS has no easy virtual-gamepad driver like Windows does; likely needs a DriverKit virtual HID device. Keyboard + mouse first.
+- Voice as an extra layer. Conflicts with the current "no voice" decision; owner to revisit later.
+- Adaptive hardware (switches, foot pedals, sip-and-puff, Tobii, Xbox Adaptive Controller).
+- Windows and Linux versions. The ideas doc suggested Windows first; current decision stays **Mac first** (it's the gap: PlayAbility and GameFace are Windows). Revisit after the Mac version works.
+- Therapist/professional tools, advanced ML personalization.
+
+**Big risks to keep in mind:** competing with PlayAbility, computer-vision robustness (lighting, glasses, faces, cameras), neck fatigue, tremors, latency, anti-cheat (never promise "every game"), and building without disabled users. Recruit 5–20 disabled testers early.
+
 ## Rules for Claude
 - Use whatever level of complexity the project actually needs, but keep it well-organized and commented, and briefly explain new or tricky parts in plain language so I understand how it works.
 - Reliability and speed over new features.
@@ -137,6 +177,8 @@ Key question for every tester: **"What made you stop using it?"**
 ## Progress Log
 - 2026-10-18: Project planned. GitHub repo created (private). Decided: downloadable app + website with browser demo. Clarified: mainly for disabled gamers, fully face-controlled (head + expressions + head aiming), must work in fast games, native Swift, Apple Silicon, no voice. No code yet.
 - 2026-10-18: **Phase 1 prototype built** (code only; compiles on macOS CI, not yet run on a real Mac). SwiftPM app with SwiftUI debug window: camera preview, pitch/yaw/roll (raw + vs. neutral), calibration status, threshold bar with press/release lines, "% to trigger", Space held, control ON/OFF, FPS, Vision/processing time, frame→key latency, recent safety events, permission instructions. Gesture: tilt head up = hold Space. Added README.md (setup, permissions, kill switch, tuning), TESTING.md (TextEdit → Chrome dino → Minecraft checklist + report template), .gitignore, and the GitHub Actions macOS build.
+
+- 2026-10-18: Added the owner's ideas backlog, long-term vision, and competitor update (PlayAbility, GameFace archived) to this brief. Core decisions unchanged (Mac first, no voice for now). Nothing built from the backlog yet.
 
 ## Next Steps
 - Owner runs Phase 1 on the Mac and works through TESTING.md, then pastes back the report (first: does "Tilt up" go positive when tilting up? camera fps, processing time, frame→key latency, false triggers when talking/laughing).
