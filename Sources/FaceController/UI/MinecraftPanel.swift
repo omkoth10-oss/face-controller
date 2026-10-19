@@ -118,7 +118,7 @@ struct MinecraftPanel: View {
                     Text(status.headJob == .move ? "Head walks (W A S D)" : "Head looks around (mouse)")
                         .font(.callout)
                     if status.headPaused {
-                        Text("Head tilted: walking/aiming paused")
+                        Text("Head tilted: walking/aiming paused (stuck like this? press Recenter)")
                             .font(.caption)
                             .foregroundColor(.orange)
                     }

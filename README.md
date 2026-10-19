@@ -4,11 +4,12 @@ A free Mac app that turns your webcam into a game controller using head and face
 gestures. It sends real keyboard input at the system level, so it works with
 almost any game.
 
-> **Status: Phase 2 prototype.** Head gestures (tilt up, turn left/right),
-> facial expressions (open mouth, raise eyebrows), head-to-mouse aiming, and a
-> Snake mode for Google Snake. A debug window shows exactly what the tracker sees,
-> every gesture's live value, how close you are to triggering, and how fast
-> everything is.
+> **Status: Phase 3 prototype.** Head gestures (tilt up, turn left/right),
+> facial expressions (open mouth, raise eyebrows), head-to-mouse aiming, a
+> Snake mode for Google Snake, and a Minecraft preset with three switchable ways
+> for the head to both walk and aim. A debug window shows exactly what the
+> tracker sees, every gesture's live value, how close you are to triggering, and
+> how fast everything is.
 
 ## Requirements
 
@@ -86,13 +87,14 @@ and run `swift run` again.
 | **Keys** | tilt up = hold **Space**, turn left = hold **A**, turn right = hold **D** | hold **left mouse button** | hold **E** |
 | **Aim (mouse)** | moves the mouse pointer (like a joystick) | hold **left mouse button** | hold **E** |
 | **Snake** | up / down / left / right (or a quick flick) = **one tap** of ↑ ↓ ← → | off | off |
+| **Minecraft** | walks and/or looks around, depending on the head option (below) | walk forward **W** (option 1) / break block = **left click** (2, 3) | jump = **Space** |
 
 - **Hold** gestures keep the key/button down for as long as you hold the gesture.
   A quick open-and-close of the mouth is a click; keeping it open is a held click
   (drag, hold to mine, etc.).
 - **Aim mode:** the further you turn/tilt past a small deadzone, the faster the
   pointer moves; come back to neutral and it stops. Space/A/D are off in this
-  mode because the head can't do both jobs at once yet (that's Phase 3). Use the
+  mode (the Minecraft preset is where the head does both). Use the
   **Sensitivity** slider to adjust speed.
 - **Snake mode:** each head turn/tilt, or a quick **flick**, sends one arrow-key
   tap. After a turn, that direction's axis re-arms as soon as you come partway
@@ -111,6 +113,34 @@ and run `swift run` again.
   TESTING.md for a tuning guide.
 - Switching mode releases everything first.
 
+### Minecraft preset (Phase 3: the head walks AND aims)
+
+Made for **Minecraft Classic** in the browser (**classic.minecraft.net**: W A S D
+walk, Space jumps, the mouse looks around, left click breaks a block). Walking
+and looking around both want the head, so there are three options to try. Pick
+one in the **Minecraft** panel (right column); it's saved.
+
+1. **Face moves, head aims.** The head only looks around (like the mouse). Open
+   your mouth to walk forward (W), raise your eyebrows to jump (Space). Simple,
+   but nothing is left for clicking.
+2. **Mode switch.** Tilt your head toward either shoulder (like a curious dog,
+   about 15°) and back: the head switches between **MOVE** (tilt up = W, down = S,
+   left = A, right = D) and **AIM** (look around). Each job has its own sound.
+   While your head is tilted, walking and aiming pause, so the switch itself
+   never walks or turns the view, and every switch lets go of everything. Mouth =
+   break block (left click), eyebrows = jump. Tilting toward a shoulder was picked
+   because walking and aiming never use it, Vision measures it reliably, and
+   people rarely do it by accident while playing.
+3. **Split zones.** Small head moves look around. Go further than the **walk
+   zone** (default 11°) and you also walk that way (up = W, down = S, left = A,
+   right = D) while still turning. Mouth = break block, eyebrows = jump.
+
+A small label floats at the top of the screen over the game (**AIM** / **MOVE** /
+**OFF**, plus what's held). It never takes the keyboard or mouse from the game,
+and can be switched off in the panel. Play the game in full-screen Chrome so the
+pointer stays inside it. The floating center, kill switch and every safety rule
+work the same in all three options. TESTING.md section 8 has a test for each.
+
 ### Floating center (on in every mode)
 
 The center follows your head: when your head **rests still near the center**,
@@ -123,7 +153,7 @@ the deadzone (so the pointer can't move); Snake, inside the re-arm zone.
 
 The **Floating center** box (middle column) has an on/off switch for the current
 mode (each mode remembers its own) and a **Follow time** slider (how quickly the
-center catches up; default about 2 s). Both are saved. On the Direction pad the
+center catches up; default about 1.5 s). Both are saved. On the Direction pad the
 **purple ring** is the floating center; the grey cross is where you calibrated.
 **Recenter** (⌃⌥⌘R) snaps the center to your head instantly.
 
@@ -202,7 +232,7 @@ its label.
 | `Aim.maxSpeedX` / `maxSpeedY` | 1500 / 1000 | Full speed in screen points per second. |
 | `Aim.curveExponent` | 1.8 | Response curve: 1 = straight line; higher = slower and more precise near the center. |
 | `Aim.smoothingTime` | 0.05 s | Eases speed changes between camera frames. 0 = none. |
-| `Snake.default...` | 5°, 45%, 30 ms, 30%, 60°/s | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed). Normally just use the sliders. |
+| `Snake.default...` | 8.5°, 45%, 40 ms, 25%, 80°/s | Starting values of the Snake sliders (press, re-arm, hold, smoothing, flick speed): the owner's tuned values. Normally just use the sliders. |
 | `Snake.defaultMinTurnInterval` | 45 ms | Starting value of the "Min time between turns" slider. Turns closer than this are sent a little later, never dropped. |
 | `Snake.defaultExtraTurnGuardEnabled` | on | Starting state of the Extra-turn guard switch in the Snake panel. |
 | `Snake.extraTurnGuardFraction` | 1.0 | When the guard is suspicious of a flick (swing-back or leak), it must reach this fraction of the press threshold to fire. |
@@ -212,6 +242,13 @@ its label.
 | `Snake.bounceBlock` | 0.35 s | When the bounce-back block is ON: after re-arming, ignore turns the opposite way on that axis for this long. |
 | `Snake.sameDirectionCooldown` | 0.25 s | When the double-turn block is ON: the same direction can't fire twice within this time. |
 | `FloatingCenter.snakeZoneFraction` / `snakePauseAfterTurn` | 0.5 / 0.8 s | Snake: the center only follows within half the re-arm zone, and waits this long after each turn. |
+| `Minecraft.defaultOption` | option 1 | Head option picked on first launch (then the panel's choice is saved). |
+| `Minecraft.faceMovesBindings` / `actionBindings` / `headWalkBindings` | see Minecraft preset | What each gesture does in the options (keys W A S D, Space, left click). |
+| `Minecraft.defaultSwitchTiltDegrees` / `switchHoldTime` | 15° / 0.15 s | Option 2: tilt toward a shoulder this far, this long, to switch MOVE ↔ AIM (slider). |
+| `Minecraft.switchReleaseFraction` / `switchPauseFraction` | 0.5 / 0.5 | Option 2: come back below half the tilt before the next switch; walking/aiming pause while tilted past half. |
+| `Minecraft.moveSound` / `aimSound` | Submarine / Glass | Option 2: sound for switching to MOVE / to AIM. |
+| `Minecraft.defaultMoveDegrees` / `moveHoldTime` | 8° / 60 ms | Option 2 in MOVE: turn/tilt this far to walk (slider); releases at 60% of it. |
+| `Minecraft.defaultWalkZoneDegrees` / `walkHoldTime` | 11° / 80 ms | Option 3: past this the head also walks (slider); stops below 75% of it. |
 | `Snake.flickMinFraction` / `flickOnsetFraction` | 0.3 / 0.5 | How far out a flick must be (fraction of press), and how "early" a flick may fire. |
 | `FloatingCenter.defaultEnabled` / `defaultFollowTime` | on / 2 s | Starting values of the Floating center switch and slider (your values are saved). |
 | `FloatingCenter.stillSpeed` / `restDwell` | 15°/s / 0.25 s | How still, and for how long, your head must rest before the center follows. |
@@ -245,7 +282,11 @@ its label.
 - **Direction** pad: which way the app thinks *you* are moving your head.
 - **Control** ON/OFF, the kill-switch hotkey, why input is blocked (if it is),
   and what's held right now.
-- **Mode** picker: Keys / Aim (mouse) / Snake.
+- **Mode** picker: Keys / Aim (mouse) / Snake / Minecraft.
+- **Minecraft** panel (Minecraft mode only): head option picker, what every
+  gesture does in that option, option 2's big MOVE / AIM indicator with the
+  shoulder-tilt bar and a **Switch now** button, the option's sliders (switch
+  tilt, walk threshold, walk zone), and the overlay switch.
 - **Snake tuning** (Snake mode only): Recenter button; "Right now" lines that
   say exactly why a turn isn't firing; last turn and its frame → key latency;
   live sliders; your values with a Copy button.
@@ -283,12 +324,15 @@ Sources/FaceController/
   Calibration/  Calibrator.swift: records your neutral face
   Gestures/     GestureCatalog.swift (gestures, modes, bindings),
                 ThresholdGesture.swift (hysteresis + hold time → press / release),
-                SnakeController.swift (Snake rules + saved slider settings)
+                SnakeController.swift (Snake rules + saved slider settings),
+                HeadOptions.swift (Minecraft's three head options, saved settings,
+                option 2's tilt-to-switch gesture)
   Aim/          AimController.swift: head → mouse speed (deadzone, curve, 120 Hz output)
   Input/        VirtualInput.swift: CGEvent keys, mouse button and movement; tracks what's held
   Engine/       ControlEngine.swift: the tight loop, camera → Vision → gestures → output
   Safety/       GlobalHotKey.swift (kill switch), ExitGuard.swift (release on quit), Permissions.swift
-  UI/           DebugView.swift, SnakePanel.swift, FloatingCenterBox.swift (+ Turn log),
+  UI/           DebugView.swift, SnakePanel.swift, MinecraftPanel.swift,
+                GameOverlay.swift (label over the game), FloatingCenterBox.swift (+ Turn log),
                 GestureTable.swift, DirectionPad.swift, Components.swift, CameraPreview.swift
   Support/      Config.swift (ALL tunable numbers and key mappings), Timing.swift
 ```

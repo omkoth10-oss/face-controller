@@ -1,4 +1,4 @@
-# Phase 2 testing checklist
+# Testing checklist (Phases 2–3)
 
 Work through these in order. Write down the numbers marked **📋 Report**; at the
 end there's a template to paste back to Claude.
@@ -21,6 +21,7 @@ bigger now (three columns). If it doesn't fit your screen, it scrolls.
 | **Keys** | up = hold Space, left = hold A, right = hold D | hold left mouse button | hold E |
 | **Aim (mouse)** | moves the mouse pointer like a joystick | hold left mouse button | hold E |
 | **Snake** | up/down/left/right (or a quick flick) = one tap of ↑ ↓ ← → | off | off |
+| **Minecraft** | depends on the head option (section 8) | W (option 1) / break block (2, 3) | jump |
 
 Switching mode releases everything. The kill switch **⌃⌥⌘K** still turns all of
 it off from any app.
@@ -175,11 +176,16 @@ near the center; did it work in a game (which); jittery or smooth?
 
 ## 7. Google Snake (15 min)
 
+**Defaults are now your tuned values** (2026-10-19): press 8.5°, re-arm 45%,
+hold 40 ms, smoothing 25%, flick 80°/s, min gap 45 ms, extra-turn guard on,
+bounce-back and double-turn blocks off. "Reset to defaults" in the Snake panel
+goes back to exactly these.
+
 **What changed since your last test (round 5: "unwanted extra turns"):**
 - New **Extra-turn guard** (ON by default, switch in the Snake panel). A flick
-  normally fires very early (at 30% of the press threshold, 1.5° by default).
+  normally fires very early (at 30% of the press threshold).
   In two moments that's too trusting, so there a flick must reach the **full
-  press threshold** (5°) first:
+  press threshold** first:
   - **Swing-back:** you just came back fast from a turn and your head swings on
     past the center the other way (e.g. a big LEFT, then a small RIGHT as you
     come back).
@@ -190,7 +196,7 @@ near the center; did it work in a game (which); jittery or smooth?
   show as **orange** lines in the Turn log ("IGNORED as an extra turn", with how
   far it got). If an orange line was a turn you actually wanted, tell me.
 - Each ✓ line now adds **"head went to N°"** once you come back: how far your head
-  went for that turn. Real turns usually go well past 5°; if yours go to 15–25°,
+  went for that turn. Real turns usually go well past the press threshold; if yours go to 15–25°,
   smaller head moves are enough and cause fewer swing-back turns.
 - The red **"not re-armed yet"** lines no longer appear while your head is still
   going further out in the same big movement (that wasn't a new attempt). They
@@ -282,7 +288,115 @@ deliberate flick should be well above the Flick speed, sitting still well below.
 - Orange "IGNORED" lines: were any of them turns you wanted?
 - Typical "head went to N°" values.
 
-## 8. Quick game check (optional, 5 min)
+## 8. Minecraft Classic: the head walks AND aims (Phase 3, 30 min)
+
+Phase 3 question: the head is wanted for walking AND for looking around, which
+clash. There are **three options** to try. Play the same short course with each,
+then pick the one you'd keep.
+
+**Minecraft Classic controls** (the game itself): W A S D walk, Space jumps, the
+mouse looks around, left click breaks a block, right click places one (no
+gesture for that yet), B opens the block menu, Esc frees the mouse.
+
+### Setup
+
+1. In Chrome, open **classic.minecraft.net**, pick a name and start a world.
+2. Make Chrome **full screen** (green button, or ⌃⌘F). This keeps the pointer
+   inside the game, so a click can't land on another app.
+3. In the debug window, set Mode = **Minecraft** and pick a head option in the
+   **Minecraft** panel (right column).
+4. Sit naturally and press **⌃⌥⌘R** (Recenter).
+5. Click into the game once with your real mouse so it captures the mouse (the
+   pointer disappears). Then hands off.
+6. A small label at the top of the screen shows **AIM** / **MOVE** / **OFF** and
+   what's held. **⌃⌥⌘K** stops everything, from any app.
+
+Look speed: the **Sensitivity** slider in the aiming box (right column, under
+the Minecraft panel).
+
+### The course (same for every option)
+
+a. **Look around:** turn all the way round, look up at the sky and down at your
+   feet, then come back to center: the view should stop.
+b. **Walk** to something about 10 blocks away (a tree, a hill).
+c. **Jump** onto a 1-block step.
+d. **Rest** still for 10 s: nothing should walk, turn or jump.
+e. **Break** a block you aim at (options 2 and 3; option 1 has no click).
+f. **Talk** for 10 s: note anything that fires.
+
+### Option 1: Face moves, head aims
+
+Head = look around only. **Open mouth = walk forward (W)**, **raise eyebrows =
+jump (Space)**.
+
+- [ ] Small head moves turn the view slowly, bigger ones faster; back to center
+      stops it.
+- [ ] Mouth open walks forward, closing it stops. Turning your head while
+      walking steers.
+- [ ] Eyebrows jump. Walk + jump together (mouth open + eyebrows) to climb.
+- [ ] Talking: does it make you walk? How much?
+
+📋 **Report:** look / walk / overall (1–5 each), did talking walk you, the worst
+part.
+
+### Option 2: Mode switch
+
+**Tilt your head toward either shoulder** (like a curious dog, ~15°) and back:
+the head switches between **MOVE** and **AIM**. You hear a sound (a different one
+for each) and the label changes. Starts in AIM.
+**MOVE:** tilt up = W (forward), down = S (back), turn left = A, right = D.
+**AIM:** head looks around. **Open mouth = break block (left click)**,
+**eyebrows = jump** in both.
+
+- [ ] Tilt to a shoulder: sound + label MOVE. Again: other sound + AIM.
+- [ ] While your head is tilted, nothing walks or turns (panel says "walking/
+      aiming paused"). If it stays paused while you sit upright, press ⌃⌥⌘R.
+- [ ] In MOVE, each direction walks the right way; back to center stops.
+- [ ] Every switch lets go of everything (nothing keeps walking).
+- [ ] Count accidental switches (switching when you didn't mean to).
+- [ ] Mouth breaks a block, eyebrows jump.
+
+📋 **Report:** look / walk / overall (1–5), accidental switches, is switching
+quick enough, best **Switch tilt** and **Walk threshold (MOVE)**, the worst part.
+
+### Option 3: Split zones
+
+**Small head moves = look around. Go past the walk zone (default 11°) and you
+ALSO walk that way:** up = W, down = S, left = A, right = D, while the view keeps
+turning. Mouth = break block, eyebrows = jump. The dashed box on the Direction
+pad is the walk zone; the label shows **AIM + WALK** while walking.
+
+- [ ] Small moves only look (label AIM).
+- [ ] Turn far: you turn AND walk that way. Back inside the zone: walking
+      stops, looking continues.
+- [ ] Walking forward means tilting up, which also tilts the view up. How bad
+      is that?
+- [ ] Any walking you didn't mean?
+- [ ] Mouth breaks a block, eyebrows jump.
+
+📋 **Report:** look / walk / overall (1–5), accidental walking, best **Walk zone**,
+the worst part.
+
+### Safety and floating center (any option)
+
+- [ ] While walking, press ⌃⌥⌘K: everything stops, nothing stays held.
+- [ ] While walking, look away from the camera: it stops within a moment.
+- [ ] Rest still: the purple ring on the Direction pad follows your head and
+      nothing fires.
+- [ ] Closing the debug window quits the app (the label at the top disappears).
+
+### If something doesn't work
+
+- The Aim box shows pointer speed but **the view doesn't turn** in the game: tell
+  me (the browser may be ignoring the mouse movement).
+- **The game lets go of the mouse after a click:** make sure Chrome is full screen.
+- **No label at the top of the screen:** check "Show the MOVE / AIM label" in the
+  Minecraft panel, and tell me if it's still missing over full-screen Chrome.
+
+📋 **Report:** which option you'd keep and why, and **what made you want to stop
+using it**.
+
+## 9. Quick game check (optional, 5 min)
 
 - [ ] **Chrome dino** (chrome://dino), Keys mode: still jumps with tilt up.
 - [ ] **Minecraft**, Keys mode: turn left/right strafes (A/D), tilt up jumps,
@@ -327,6 +441,16 @@ Snake: best score before tuning __  after tuning __
        red Turn log lines (screenshot): __   fast combos all ✓? __   diagonals both ✓? __
        unwanted extra turns (how often)? __   orange lines that were real turns? __
        typical "head went to" __°
+
+Minecraft (classic.minecraft.net), Chrome full screen? __
+  Option 1 Face moves:  look __/5  walk __/5  overall __/5  talking walked me? __  worst: __
+  Option 2 Mode switch: look __/5  walk __/5  overall __/5  accidental switches __
+                        switch tilt __°  walk threshold __°  worst: __
+  Option 3 Split zones: look __/5  walk __/5  overall __/5  accidental walking? __
+                        walk zone __°  worst: __
+  Sensitivity __   view turned in the game? __   game let go of the mouse on click? __
+  Label visible over the game? __   ⌃⌥⌘K stopped walking? __   face lost stopped? __
+  Option I'd keep: __   why: __
 
 What felt worst / what made you want to stop using it:
 Anything else:
