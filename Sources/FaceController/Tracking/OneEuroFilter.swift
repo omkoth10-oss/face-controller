@@ -92,3 +92,20 @@ struct HeadAnglesFilter {
         roll.reset()
     }
 }
+
+/// Smooths the expression values (mouth, eyebrows). Same filter, tuned for their scale.
+struct ExpressionFilter {
+    private var mouth = OneEuroFilter(beta: Config.Smoothing.expressionBeta)
+    private var brow = OneEuroFilter(beta: Config.Smoothing.expressionBeta)
+
+    mutating func filter(_ values: ExpressionValues, at time: Double) -> ExpressionValues {
+        guard Config.Smoothing.enabled else { return values }
+        return ExpressionValues(mouthOpen: mouth.filter(values.mouthOpen, at: time),
+                                browHeight: brow.filter(values.browHeight, at: time))
+    }
+
+    mutating func reset() {
+        mouth.reset()
+        brow.reset()
+    }
+}

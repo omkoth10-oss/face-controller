@@ -9,6 +9,9 @@ struct CameraInfo {
     let frameRate: Double
     /// Extra explanation, e.g. "60 fps isn't supported by this camera, using 30".
     let note: String?
+    /// Whether the frames we analyze are mirrored (like a selfie). We ask for
+    /// unmirrored frames; PlayerDirections corrects for it either way.
+    let framesMirrored: Bool
 }
 
 enum CameraError: Error {
@@ -143,6 +146,14 @@ final class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard session.canAddOutput(videoOutput) else { throw CameraError.cannotAddOutput }
         session.addOutput(videoOutput)
 
+        // Ask for NORMAL (unmirrored) frames, the camera's own view, so we know which
+        // way is which. (Only the on-screen preview is mirrored.) If a camera doesn't
+        // let us choose, we read back what it does in `currentInfo()`.
+        if let connection = videoOutput.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+
         // Pick the camera mode (resolution + frame rate). This must happen AFTER the
         // input is added to the session, otherwise the session overrides it.
         if let choice = Self.chooseFormat(for: device) {
@@ -165,7 +176,8 @@ final class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// Reads back what the camera is ACTUALLY doing (not just what we asked for).
     private func currentInfo() -> CameraInfo {
         guard let device = device else {
-            return CameraInfo(deviceName: "Unknown", width: 0, height: 0, frameRate: 0, note: nil)
+            return CameraInfo(deviceName: "Unknown", width: 0, height: 0, frameRate: 0, note: nil,
+                              framesMirrored: false)
         }
         let dims = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
         let duration = device.activeVideoMinFrameDuration
@@ -175,11 +187,13 @@ final class CameraManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         if fps < Config.Camera.preferredFrameRate - 1 {
             note = "This camera can't do \(Int(Config.Camera.preferredFrameRate)) fps at a usable resolution, so it's using its fastest rate."
         }
+        let mirrored = videoOutput.connection(with: .video)?.isVideoMirrored ?? false
         return CameraInfo(deviceName: device.localizedName,
                           width: dims.width,
                           height: dims.height,
                           frameRate: fps,
-                          note: note)
+                          note: note,
+                          framesMirrored: mirrored)
     }
 
     // MARK: - Choosing the camera and its mode

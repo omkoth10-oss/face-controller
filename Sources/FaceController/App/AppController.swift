@@ -12,21 +12,24 @@ final class DebugModel: ObservableObject {
     @Published var cameraStarting = false
     @Published var cameraError: String?
     @Published var killSwitchRegistered = false
+    @Published var mode = Config.Mapping.startMode
+    @Published var aimSensitivity = Config.Aim.defaultSensitivity
 }
 
 /// Wires all the pieces together and handles everything that happens on the
 /// main thread: permissions, the kill switch, the window's buttons, quitting.
 ///
-///     Camera ──frames──▶ ControlEngine (tracking queue) ──▶ KeyboardOutput ──▶ macOS
-///                               │                               ▲
-///                          snapshots                     kill switch / permissions
-///                               ▼                               │
+///     Camera ──frames──▶ ControlEngine (tracking queue) ──keys/clicks──▶ VirtualInput ──▶ macOS
+///                               │   └──head offset──▶ AimController ──mouse──┘  ▲
+///                          snapshots                (120 Hz, Aim mode)           │
+///                               ▼                                 kill switch / permissions
 ///                          DebugModel ──▶ DebugView        AppController (main thread)
 ///
 /// Use this class from the main thread only.
 final class AppController {
     let model = DebugModel()
-    let keyboard: KeyboardOutput
+    let input: VirtualInput
+    let aim: AimController
     let engine: ControlEngine
     let camera: CameraManager
 
@@ -39,9 +42,11 @@ final class AppController {
     private var lastAccessibilityState: Bool?
 
     init() {
-        let keyboard = KeyboardOutput()
-        let engine = ControlEngine(keyboard: keyboard)
-        self.keyboard = keyboard
+        let input = VirtualInput()
+        let aim = AimController(input: input)
+        let engine = ControlEngine(input: input, aim: aim)
+        self.input = input
+        self.aim = aim
         self.engine = engine
         // Frames go straight from the camera to the engine, on the engine's queue.
         self.camera = CameraManager(frameQueue: engine.queue,
@@ -53,8 +58,8 @@ final class AppController {
 
     func start() {
         // Safety first: make sure keys are released however the app exits.
-        ExitGuard.install(keyboard: keyboard)
-        keyboard.setBlocked(.controlOff, !controlEnabled)
+        ExitGuard.install(input: input)
+        input.setBlocked(.controlOff, !controlEnabled)
         model.controlEnabled = controlEnabled
 
         engine.onSnapshot = { [weak self] snapshot in
@@ -94,9 +99,10 @@ final class AppController {
 
     func setControl(enabled: Bool) {
         controlEnabled = enabled
-        // This releases all held keys immediately (right here on the main thread),
-        // without waiting for the tracking loop.
-        keyboard.setBlocked(.controlOff, !enabled)
+        // This releases everything held immediately (right here on the main thread),
+        // without waiting for the tracking loop. It also stops the mouse.
+        input.setBlocked(.controlOff, !enabled)
+        aim.stopMoving()
         engine.controlWasToggled(isOn: enabled)
         model.controlEnabled = enabled
         // An audible cue, so you know the state even inside a full-screen game.
@@ -105,6 +111,20 @@ final class AppController {
 
     func recalibrate() {
         engine.recalibrate()
+    }
+
+    /// Keys / Aim / Snake. Releases everything immediately, then switches.
+    func setMode(_ mode: ControlMode) {
+        guard mode != model.mode else { return }
+        model.mode = mode
+        input.releaseAll()
+        aim.stopMoving()
+        engine.setMode(mode)
+    }
+
+    func setAimSensitivity(_ value: Double) {
+        model.aimSensitivity = value
+        aim.setSensitivity(value)
     }
 
     private func registerKillSwitch() {
@@ -139,6 +159,7 @@ final class AppController {
                 case .success(let info):
                     self.model.cameraInfo = info
                     self.model.cameraError = nil
+                    self.engine.setFramesMirrored(info.framesMirrored)
                 case .failure(let error):
                     self.model.cameraError = error.message
                     self.cameraStartRequested = false  // Allow "Retry camera".
@@ -179,11 +200,11 @@ final class AppController {
             accessibilityPrompted = true
             Permissions.promptForAccessibility()
         }
-        // Without permission macOS silently drops our key events, so block presses.
-        // If permission is REMOVED while running, this also releases all held keys.
-        keyboard.setBlocked(.noAccessibilityPermission, !accessibilityOK)
+        // Without permission macOS silently drops our events, so block input.
+        // If permission is REMOVED while running, this also releases everything held.
+        input.setBlocked(.noAccessibilityPermission, !accessibilityOK)
         if lastAccessibilityState == true && !accessibilityOK {
-            engine.noteEvent("Accessibility permission was turned off: all keys released")
+            engine.noteEvent("Accessibility permission was turned off: everything released")
         } else if lastAccessibilityState == false && accessibilityOK {
             engine.noteEvent("Accessibility permission granted")
         }

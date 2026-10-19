@@ -1,6 +1,6 @@
 import Foundation
 
-/// Makes sure no key is left held down when the app exits.
+/// Makes sure no key or mouse button is left held down when the app exits.
 ///
 /// Ways the app can end, and what catches each one:
 /// - Cmd+Q / closing the window  -> `applicationWillTerminate` (AppDelegate) + `atexit`
@@ -9,18 +9,18 @@ import Foundation
 /// - `kill <pid>`                -> SIGTERM handler below
 /// - Any call to `exit()`        -> `atexit` handler below
 ///
-/// What can NOT be caught: a crash or `kill -9`. If that ever leaves Space
-/// stuck, just tap the real Space bar once and it's released.
+/// What can NOT be caught: a crash or `kill -9`. If that ever leaves a key
+/// stuck, just tap that key (or click the mouse) once and it's released.
 enum ExitGuard {
-    private static var keyboard: KeyboardOutput?
+    private static var input: VirtualInput?
     private static var signalSources: [DispatchSourceSignal] = []
     private static var installed = false
 
     /// Call once at startup.
-    static func install(keyboard: KeyboardOutput) {
+    static func install(input: VirtualInput) {
         guard !installed else { return }
         installed = true
-        self.keyboard = keyboard
+        self.input = input
 
         // Runs when the process exits normally (including after NSApp.terminate).
         atexit {
@@ -42,8 +42,8 @@ enum ExitGuard {
         }
     }
 
-    /// Releases every held key and blocks new presses for good. Safe to call many times.
+    /// Releases everything held and blocks all input for good. Safe to call many times.
     static func releaseEverything() {
-        keyboard?.setBlocked(.shuttingDown, true)
+        input?.setBlocked(.shuttingDown, true)
     }
 }

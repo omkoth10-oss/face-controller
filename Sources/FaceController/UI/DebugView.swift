@@ -1,7 +1,8 @@
 import Foundation
 import SwiftUI
 
-/// The Phase 1 debug window: camera preview, live numbers, and controls.
+/// The debug window: camera preview, direction pad, every gesture's live value,
+/// aiming, speed numbers, and controls.
 struct DebugView: View {
     @ObservedObject var model: DebugModel
     let controller: AppController
@@ -9,27 +10,48 @@ struct DebugView: View {
     private var snap: EngineSnapshot { model.engine }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            permissionBanners
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 10) {
-                    preview
-                    cameraInfo
-                    performanceBox
-                }
-                .frame(width: 440)
+        // Scrolls if your screen is smaller than the window's content.
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: 12) {
+                permissionBanners
+                HStack(alignment: .top, spacing: 16) {
+                    // Column 1: what the camera sees.
+                    VStack(alignment: .leading, spacing: 10) {
+                        preview
+                        cameraInfo
+                        GroupBox(label: Text("Direction (your point of view)")) {
+                            DirectionPad(offset: snap.playerOffset, mode: snap.mode)
+                                .frame(maxWidth: .infinity)
+                        }
+                        performanceBox
+                    }
+                    .frame(width: 400)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    controlBox
-                    calibrationBox
-                    gestureBox
-                    headBox
-                    eventLog
+                    // Column 2: control, mode, calibration, gestures.
+                    VStack(alignment: .leading, spacing: 10) {
+                        controlBox
+                        modeBox
+                        calibrationBox
+                        GroupBox(label: Text("Gestures")) {
+                            GestureTable(gestures: snap.gestures,
+                                         mode: snap.mode,
+                                         snakeWaitingForCenter: snap.snakeWaitingForCenter)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .frame(width: 500)
+
+                    // Column 3: aiming, raw numbers, events.
+                    VStack(alignment: .leading, spacing: 10) {
+                        aimBox
+                        headBox
+                        eventLog
+                    }
+                    .frame(width: 360)
                 }
-                .frame(width: 380)
             }
+            .padding(16)
         }
-        .padding(16)
     }
 
     // MARK: - Permission instructions
@@ -57,11 +79,11 @@ struct DebugView: View {
         }
 
         if !model.accessibilityGranted {
-            Banner(title: "Accessibility access is off, so key presses can't be sent",
+            Banner(title: "Accessibility access is off, so keys and mouse can't be sent",
                    lines: [
                        "1. Open System Settings → Privacy & Security → Accessibility.",
                        "2. Turn ON \"\(app)\". Not listed? Click +, then add it (Terminal is in Applications → Utilities).",
-                       "3. This window notices within a second. If keys still don't arrive, quit and run again."
+                       "3. This window notices within a second. If input still doesn't arrive, quit and run again."
                    ],
                    buttonTitle: "Open Accessibility Settings",
                    action: { Permissions.openAccessibilitySettings() })
@@ -93,9 +115,11 @@ struct DebugView: View {
                 VStack(spacing: 8) {
                     Text(calibrating.faceVisible ? "Look straight at the camera" : "Face not found: look at the camera")
                         .font(.title2.bold())
+                    Text("Mouth closed, eyebrows relaxed")
+                        .font(.callout)
                     ProgressView(value: calibrating.progress)
                         .frame(width: 240)
-                    Text("Relax and hold still… \(Int(calibrating.progress * 100))%")
+                    Text("Hold still… \(Int(calibrating.progress * 100))%")
                         .font(.callout)
                 }
                 .padding(16)
@@ -107,7 +131,7 @@ struct DebugView: View {
                     .foregroundColor(.white)
             }
         }
-        .frame(width: 440, height: 330)
+        .frame(width: 400, height: 300)
         .background(Color.black)
         .cornerRadius(8)
     }
@@ -120,24 +144,14 @@ struct DebugView: View {
                 if let note = info.note {
                     Text(note).font(.caption).foregroundColor(.secondary)
                 }
+                Text(info.framesMirrored
+                     ? "Preview mirrored like a selfie. Camera frames arrive mirrored (corrected automatically)."
+                     : "Preview mirrored like a selfie. Camera frames arrive unmirrored (corrected automatically).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             } else {
                 Text("Camera: not running").font(.caption).foregroundColor(.secondary)
             }
-        }
-    }
-
-    private var eventLog: some View {
-        GroupBox(label: Text("Recent events")) {
-            VStack(alignment: .leading, spacing: 2) {
-                if snap.recentEvents.isEmpty {
-                    Text("Nothing yet").foregroundColor(.secondary)
-                }
-                ForEach(snap.recentEvents.indices, id: \.self) { index in
-                    Text(snap.recentEvents[index])
-                }
-            }
-            .font(.system(.caption, design: .monospaced))
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -163,10 +177,67 @@ struct DebugView: View {
                         .foregroundColor(.orange)
                 }
                 if !snap.blockReasons.isEmpty {
-                    Text("Keys blocked: " + snap.blockReasons.map { $0.rawValue }.joined(separator: ", "))
+                    Text("Input blocked: " + snap.blockReasons.map { $0.rawValue }.joined(separator: ", "))
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
+                if !heldOutputs.isEmpty {
+                    Text("Held right now: " + heldOutputs.joined(separator: ", "))
+                        .font(.caption.bold())
+                        .foregroundColor(.green)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Labels of everything currently held (e.g. "Space", "left mouse").
+    private var heldOutputs: [String] {
+        snap.gestures.compactMap { row in
+            guard row.firing, let binding = row.binding, binding.style == .hold else { return nil }
+            return binding.label
+        }
+    }
+
+    // MARK: - Mode
+
+    private var modeSelection: Binding<ControlMode> {
+        Binding(get: { model.mode }, set: { controller.setMode($0) })
+    }
+
+    private var modeDescription: String {
+        switch model.mode {
+        case .keys:
+            return "Head presses movement keys, face does actions."
+        case .aim:
+            return "Head moves the mouse like a joystick. Space/A/D are off (head can't do both until Phase 3)."
+        case .snake:
+            return "For Google Snake: each head movement taps one arrow key. Bring your head back to the center between turns. Expressions are off."
+        }
+    }
+
+    private var modeBox: some View {
+        GroupBox(label: Text("Mode")) {
+            VStack(alignment: .leading, spacing: 6) {
+                Picker("Mode", selection: modeSelection) {
+                    ForEach(ControlMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Text(modeDescription)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                if snap.snakeWaitingForCenter {
+                    Text("Snake: bring your head back to the center to arm the next turn")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                Text("Switching mode releases everything.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -182,17 +253,44 @@ struct DebugView: View {
             let hint = faceVisible ? "look straight at the camera" : "face not found"
             return "Calibrating… \(Int(progress * 100))% (\(hint))"
         case .done(let result):
-            return String(format: "Calibrated ✓  neutral pitch %+.1f°, yaw %+.1f°, roll %+.1f°  (jitter ±%.1f°)",
-                          result.neutral.pitch, result.neutral.yaw, result.neutral.roll, result.pitchJitter)
+            var text = String(format: "Calibrated ✓  neutral pitch %+.1f°, yaw %+.1f°", result.neutral.pitch, result.neutral.yaw)
+            if let expressions = result.neutralExpressions {
+                text += String(format: ", mouth %.0f%%, brows %.0f%%", expressions.mouthOpen, expressions.browHeight)
+            } else {
+                text += "\nCouldn't read mouth/eyebrows: expressions are off until you recalibrate."
+            }
+            return text
         }
     }
 
-    /// True if your head moved noticeably during the last calibration.
-    private var calibrationWasShaky: Bool {
-        if case .done(let result) = snap.calibration {
-            return result.pitchJitter > 2
+    /// Jitter (how much each value wobbled while you held still), and a warning
+    /// when it's large compared with that gesture's press threshold.
+    private var jitterText: String? {
+        guard case .done(let result) = snap.calibration else { return nil }
+        var text = String(format: "Jitter: pitch ±%.1f°, yaw ±%.1f°", result.pitchJitter, result.yawJitter)
+        if let mouth = result.mouthJitter, let brow = result.browJitter {
+            text += String(format: ", mouth ±%.1f%%, brows ±%.1f%%", mouth, brow)
         }
-        return false
+        return text
+    }
+
+    private var noisyWarnings: [String] {
+        guard case .done(let result) = snap.calibration else { return [] }
+        // "Noisy" = the wobble while still is over a third of the press threshold.
+        var warnings: [String] = []
+        if result.pitchJitter > Config.Gestures.tiltUp.press / 3 {
+            warnings.append("Head up/down reading is noisy (did you move?).")
+        }
+        if result.yawJitter > Config.Gestures.turnLeft.press / 3 {
+            warnings.append("Head left/right reading is noisy (did you move?).")
+        }
+        if let mouth = result.mouthJitter, mouth > Config.Gestures.mouthOpen.press / 3 {
+            warnings.append("Mouth reading is noisy compared with its threshold.")
+        }
+        if let brow = result.browJitter, brow > Config.Gestures.eyebrowsRaise.press / 3 {
+            warnings.append("Eyebrow reading is noisy compared with its threshold: expect false triggers.")
+        }
+        return warnings
     }
 
     private var calibrationBox: some View {
@@ -201,8 +299,13 @@ struct DebugView: View {
                 Text(calibrationText)
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
-                if calibrationWasShaky {
-                    Text("Your head moved while calibrating. Press C to redo it.")
+                if let jitter = jitterText {
+                    Text(jitter)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                ForEach(noisyWarnings, id: \.self) { warning in
+                    Text("⚠️ \(warning) Press C to redo.")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
@@ -216,73 +319,70 @@ struct DebugView: View {
         }
     }
 
-    // MARK: - Gesture
+    // MARK: - Aiming
 
-    private var phaseText: String {
-        if let reason = snap.blockReasons.first {
-            return "Blocked: \(reason.rawValue)"
-        }
-        switch snap.gesturePhase {
-        case .waitingForNeutral: return "Return to neutral to arm"
-        case .ready: return "Ready"
-        case .holding(let progress): return "Hold… \(Int(progress * 100))%"
-        case .active: return "Firing"
-        }
+    private var sensitivitySelection: Binding<Double> {
+        Binding(get: { model.aimSensitivity }, set: { controller.setAimSensitivity($0) })
     }
 
-    private var keyStatusText: String {
-        let name = Config.TiltUp.keyName
-        return snap.keyHeld ? "\(name.uppercased()) HELD" : "\(name) released"
+    private func speedText(_ speed: Double, inDeadzone: Bool, positive: String, negative: String) -> String {
+        if inDeadzone || speed == 0 { return "still (deadzone)" }
+        let arrow = speed > 0 ? positive : negative
+        return "\(arrow) \(String(format: "%.0f", abs(speed))) pt/s"
     }
 
-    private var closenessText: String {
-        guard let value = snap.tiltUpDegrees else { return "—" }
-        let percent = Int((max(0, value) / Config.TiltUp.pressDegrees * 100).rounded())
-        return "\(percent)% of the way to pressing"
-    }
-
-    private var gestureBox: some View {
-        GroupBox(label: Text("Tilt head UP → hold \(Config.TiltUp.keyName)")) {
+    private var aimBox: some View {
+        GroupBox(label: Text("Head-to-mouse aiming")) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Tilt up:")
-                    Text(DisplayFormat.degrees(snap.tiltUpDegrees))
-                        .font(.title3)
-                        .monospacedDigit()
-                    Spacer()
-                    Text(closenessText)
+                if snap.mode != .aim {
+                    Text("Off. Pick “Aim (mouse)” in Mode to test aiming.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                ThresholdBar(value: snap.tiltUpDegrees,
-                             pressThreshold: Config.TiltUp.pressDegrees,
-                             releaseThreshold: Config.TiltUp.releaseDegrees,
-                             isHeld: snap.keyHeld)
-                Text(String(format: "Red line: press at %.1f°   Orange line: release below %.1f°   Hold: %.0f ms",
-                            Config.TiltUp.pressDegrees,
-                            Config.TiltUp.releaseDegrees,
-                            Config.TiltUp.holdTime * 1000))
+                HStack {
+                    Text("Sensitivity")
+                    Slider(value: sensitivitySelection, in: Config.Aim.sensitivityRange)
+                    Text(String(format: "%.2f×", model.aimSensitivity))
+                        .monospacedDigit()
+                        .frame(width: 50, alignment: .trailing)
+                }
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                    GridRow {
+                        Text("")
+                        Text("Head").foregroundColor(.secondary)
+                        Text("Pointer").foregroundColor(.secondary)
+                    }
+                    GridRow {
+                        Text("Left / right")
+                        Text(DisplayFormat.degrees(snap.playerOffset?.left)).monospacedDigit()
+                        Text(snap.mode == .aim
+                             ? speedText(snap.aim.speedX, inDeadzone: snap.aim.inDeadzoneX, positive: "→", negative: "←")
+                             : "—")
+                            .monospacedDigit()
+                    }
+                    GridRow {
+                        Text("Up / down")
+                        Text(DisplayFormat.degrees(snap.playerOffset?.up)).monospacedDigit()
+                        Text(snap.mode == .aim
+                             ? speedText(snap.aim.speedY, inDeadzone: snap.aim.inDeadzoneY, positive: "↑", negative: "↓")
+                             : "—")
+                            .monospacedDigit()
+                    }
+                }
+                .font(.callout)
+                Text(String(format: "Deadzone ±%.1f° / ±%.1f°, full speed at %.0f° / %.0f°, max %.0f / %.0f pt/s, curve ^%.1f",
+                            Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone,
+                            Config.Aim.horizontalFullSpeedAngle, Config.Aim.verticalFullSpeedAngle,
+                            Config.Aim.maxSpeedX, Config.Aim.maxSpeedY, Config.Aim.curveExponent))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                HStack {
-                    Text(keyStatusText)
-                        .font(.headline)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(snap.keyHeld ? Color.green : Color.gray.opacity(0.25))
-                        .foregroundColor(snap.keyHeld ? .black : .primary)
-                        .cornerRadius(6)
-                    Spacer()
-                    Text(phaseText)
-                        .font(.callout)
-                        .foregroundColor(.secondary)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    // MARK: - Head angles
+    // MARK: - Head and face numbers
 
     private var faceText: String {
         if snap.anglesMissing { return "Face found, but Vision gave no head angles" }
@@ -290,15 +390,22 @@ struct DebugView: View {
         return "NOT FOUND"
     }
 
+    private var neutralExpressions: ExpressionValues? {
+        if case .done(let result) = snap.calibration {
+            return result.neutralExpressions
+        }
+        return nil
+    }
+
     private var headBox: some View {
-        GroupBox(label: Text("Head")) {
+        GroupBox(label: Text("Head and face")) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Face:")
                     Text(faceText)
                         .foregroundColor(snap.faceVisible ? .primary : .red)
                 }
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 3) {
                     GridRow {
                         Text("")
                         Text("Raw (Vision)").foregroundColor(.secondary)
@@ -319,9 +426,42 @@ struct DebugView: View {
                         Text(DisplayFormat.degrees(snap.rawAngles?.roll)).monospacedDigit()
                         Text(DisplayFormat.degrees(snap.relativeAngles?.roll)).monospacedDigit()
                     }
+                    GridRow {
+                        Text("Mouth open")
+                        Text(DisplayFormat.percent(snap.expressions?.mouthOpen)).monospacedDigit()
+                        Text("neutral \(DisplayFormat.percent(neutralExpressions?.mouthOpen))")
+                            .foregroundColor(.secondary)
+                    }
+                    GridRow {
+                        Text("Eyebrows")
+                        Text(DisplayFormat.percent(snap.expressions?.browHeight)).monospacedDigit()
+                        Text("neutral \(DisplayFormat.percent(neutralExpressions?.browHeight))")
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .font(.callout)
+                Text("Mouth and eyebrows are in % of the distance between your eyes.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Events
+
+    private var eventLog: some View {
+        GroupBox(label: Text("Recent events")) {
+            VStack(alignment: .leading, spacing: 2) {
+                if snap.recentEvents.isEmpty {
+                    Text("Nothing yet").foregroundColor(.secondary)
+                }
+                ForEach(snap.recentEvents.indices, id: \.self) { index in
+                    Text(snap.recentEvents[index])
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(.system(.caption, design: .monospaced))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -342,7 +482,8 @@ struct DebugView: View {
                     }
                     GridRow {
                         Text("Vision time / frame")
-                        Text(DisplayFormat.milliseconds(snap.visionMs)).monospacedDigit()
+                        Text("\(DisplayFormat.milliseconds(snap.visionMs))  (landmarks \(DisplayFormat.milliseconds(snap.landmarksMs)))")
+                            .monospacedDigit()
                     }
                     GridRow {
                         Text("Total processing / frame")
@@ -354,19 +495,19 @@ struct DebugView: View {
                         Text(DisplayFormat.milliseconds(snap.cameraDelayMs)).monospacedDigit()
                     }
                     GridRow {
-                        Text("Frame → key event (last)")
-                        Text(DisplayFormat.milliseconds(snap.lastKeyLatencyMs)).monospacedDigit()
+                        Text("Frame → key/click (last)")
+                        Text(DisplayFormat.milliseconds(snap.lastOutputLatencyMs)).monospacedDigit()
                     }
                     GridRow {
-                        Text("Frame → key event (avg)")
-                        Text("\(DisplayFormat.milliseconds(snap.averageKeyLatencyMs))  (\(snap.keyEventCount) events)")
+                        Text("Frame → key/click (avg)")
+                        Text("\(DisplayFormat.milliseconds(snap.averageOutputLatencyMs))  (\(snap.outputEventCount) events)")
                             .monospacedDigit()
                     }
                 }
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("Frame → key = camera capture to key event sent. The \(Int(Config.TiltUp.holdTime * 1000)) ms hold time is on top of this, on purpose.")
+                Text("Frame → key/click = camera capture to event sent. Each gesture's hold time is on top of this, on purpose.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -384,93 +525,5 @@ struct DebugView: View {
                 }
             }
         }
-    }
-}
-
-// MARK: - Small building blocks
-
-/// Number formatting used in the window. "—" means "no value yet".
-enum DisplayFormat {
-    static func degrees(_ value: Double?) -> String {
-        guard let value = value else { return "—" }
-        return String(format: "%+.1f°", value)
-    }
-
-    static func milliseconds(_ value: Double?) -> String {
-        guard let value = value else { return "—" }
-        return String(format: "%.1f ms", value)
-    }
-}
-
-/// A colored box with instructions and an optional button.
-struct Banner: View {
-    let title: String
-    let lines: [String]
-    var buttonTitle: String?
-    var action: (() -> Void)?
-    var color: Color = .red
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
-            ForEach(lines, id: \.self) { line in
-                Text(line)
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let buttonTitle = buttonTitle, let action = action {
-                Button(buttonTitle, action: action)
-                    .padding(.top, 4)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color.opacity(0.15))
-        .cornerRadius(8)
-    }
-}
-
-/// Horizontal bar showing how far the head is tilted, with the release (orange)
-/// and press (red) thresholds marked.
-struct ThresholdBar: View {
-    let value: Double?
-    let pressThreshold: Double
-    let releaseThreshold: Double
-    let isHeld: Bool
-
-    /// The bar's right edge is 1.5× the press threshold, so you can see overshoot.
-    private var scaleMax: Double { max(pressThreshold * 1.5, 1) }
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.gray.opacity(0.2))
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(fillColor)
-                    .frame(width: geometry.size.width * fraction(value ?? 0))
-                Rectangle()
-                    .fill(Color.orange)
-                    .frame(width: 2)
-                    .offset(x: geometry.size.width * fraction(releaseThreshold) - 1)
-                Rectangle()
-                    .fill(Color.red)
-                    .frame(width: 2)
-                    .offset(x: geometry.size.width * fraction(pressThreshold) - 1)
-            }
-        }
-        .frame(height: 20)
-    }
-
-    private func fraction(_ x: Double) -> CGFloat {
-        CGFloat(min(1, max(0, x / scaleMax)))
-    }
-
-    private var fillColor: Color {
-        if isHeld { return .green }
-        guard let value = value else { return .gray }
-        if value >= pressThreshold { return .yellow }
-        if value >= releaseThreshold { return .orange.opacity(0.7) }
-        return .blue
     }
 }

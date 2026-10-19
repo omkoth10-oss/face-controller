@@ -11,10 +11,13 @@ struct FaceControllerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("Face Controller (Phase 1 debug)", id: "debug") {
+        Window("Face Controller (debug)", id: "debug") {
             DebugView(model: appDelegate.controller.model, controller: appDelegate.controller)
+                .frame(minWidth: 700, minHeight: 500)
         }
-        .windowResizability(.contentSize)
+        // Opens big enough for all three columns; resizable, and scrolls if smaller.
+        .defaultSize(width: 1340, height: 920)
+        .windowResizability(.contentMinSize)
     }
 }
 
