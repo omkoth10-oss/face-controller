@@ -1,7 +1,7 @@
-# Phase 1 testing checklist
+# Phase 2 testing checklist
 
-Work through these in order. Each step builds on the one before. Write down the
-numbers marked **📋 Report**; at the end there's a template to paste back to Claude.
+Work through these in order. Write down the numbers marked **📋 Report**; at the
+end there's a template to paste back to Claude.
 
 Before you start:
 
@@ -11,149 +11,189 @@ git pull
 swift run
 ```
 
-Sit how you normally would to play, with normal room lighting.
+Sit how you normally would to play, with normal room lighting. The window is
+bigger now (three columns). If it doesn't fit your screen, it scrolls.
+
+**Modes** (top of the middle column):
+
+| Mode | Head | Mouth open | Eyebrows raised |
+|---|---|---|---|
+| **Keys** | up = hold Space, left = hold A, right = hold D | hold left mouse button | hold E |
+| **Aim (mouse)** | moves the mouse pointer like a joystick | hold left mouse button | hold E |
+| **Snake** | up/down/left/right = one tap of ↑ ↓ ← → | off | off |
+
+Switching mode releases everything. The kill switch **⌃⌥⌘K** still turns all of
+it off from any app.
 
 ---
 
-## 0. Setup and first look (5 min)
+## 0. Setup and calibration (3 min)
 
-- [ ] The debug window opens and has a Dock icon.
-- [ ] macOS asked for **Camera** access (for Terminal) and you allowed it.
-- [ ] macOS asked for **Accessibility** access and you turned on Terminal in
-      System Settings. The red "Accessibility access is off" box disappears within
-      about a second.
-- [ ] The camera preview shows your face (mirrored like a mirror).
-- [ ] The overlay says **"Look straight at the camera"** and fills up over
-      ~3 seconds, then disappears. Calibration says **Calibrated ✓**.
-- [ ] **Face:** says "Detected".
-- [ ] **Direction check:** tilt your head UP (chin up). The **Tilt up** number
-      should go **positive** and the bar should fill.
-      ⚠️ If it goes **negative**: quit, set `TiltUp.flipDirection = true` in
-      `Sources/FaceController/Support/Config.swift`, and run again.
-- [ ] Press **C** in the debug window: calibration runs again.
+- [ ] The window opens. Calibration overlay says **"Look straight at the camera,
+      mouth closed, eyebrows relaxed"** and finishes after ~3 s.
+- [ ] Calibration box says **Calibrated ✓** with mouth and brow numbers (not
+      "Couldn't read mouth/eyebrows").
+- [ ] No orange "noisy" warnings under Calibration. (If there are, press C and
+      hold still.)
 
-📋 **Report:**
-- Camera line under the preview (name, resolution, fps)
-- Camera FPS, Vision time / frame, Total processing / frame, Camera delay
-- Calibration jitter (the "±" number)
-- With your head still and relaxed: how much does **Tilt up** wobble? (e.g. "between −1 and +1°")
-- Comfortable tilt-up: what **Tilt up** number do you reach with a small, comfortable chin-up? A big one?
+📋 **Report:** the Jitter line (pitch, yaw, mouth, brows); Vision time (and
+landmarks time); Total processing; Camera FPS.
 
-## 1. TextEdit: does Space arrive? (5 min)
+## 1. Direction check: does the app agree with YOUR head? (2 min)
 
-Open TextEdit, make a new document, and click in it so the cursor blinks.
+Look at the **Direction** pad (left column) while you move your head slowly.
 
-- [ ] Tilt head up → **one space** appears, and the debug window shows **SPACE HELD**.
-      (Only one space even if you keep holding: the app holds the key down but
-      macOS doesn't auto-repeat simulated keys. That's expected and fine for games.)
-- [ ] Return to neutral → **Space released**.
-- [ ] Do it 20 times in a row at a normal pace. Count the spaces.
-- [ ] Hover right around the red line for a few seconds. Space should NOT flicker
-      on/off (you should get at most 1–2 spaces, not a burst).
-- [ ] **Kill switch:** press **⌃⌥⌘K** (Control + Option + Command + K). You hear a
-      "pop", Control shows **OFF**. Tilting up does nothing. Press it again: "tink",
-      Control is **ON** again.
-- [ ] Hold your head tilted up (Space held), then press **⌃⌥⌘K**. Space must
-      release immediately.
+- [ ] Turn your head to **your left** → the dot moves **left**, "LEFT" lights up.
+- [ ] Turn to **your right** → dot moves **right**, "RIGHT".
+- [ ] Tilt **up** (chin up) → dot moves **up**, "UP".
+- [ ] Tilt **down** → dot moves **down**, "DOWN".
+- [ ] The camera preview looks like a mirror (raise your right hand: it appears on
+      the right side of the preview).
 
-📋 **Report:** spaces typed out of 20 tilts; any flicker; kill switch worked (yes/no).
+⚠️ If left/right is backwards: quit, set `Directions.flipHorizontal = true` in
+`Sources/FaceController/Support/Config.swift`, run again. Up/down backwards:
+`Directions.flipVertical = true`.
 
-## 2. False triggers: talking, laughing, looking around (10 min)
+📋 **Report:** all four correct? (or which flip you needed); what the line under
+the camera says about frames being mirrored/unmirrored.
 
-Stay in TextEdit with control ON. Watch whether spaces appear when they shouldn't.
+## 2. Expression readings: are Vision landmarks good enough? (5 min)
 
-- [ ] **Talk** normally for 1 minute (read something out loud). Count accidental spaces.
-- [ ] **Laugh** a few times (a real laugh, head moving). Count accidental spaces.
-- [ ] **Nod** "yes" a few times like in conversation. Count accidental spaces.
-- [ ] **Look down** at the keyboard, then back up at the screen. Count accidental spaces.
-- [ ] **Look away** to the side / turn around so the camera can't see your face
-      while holding Space (tilt up, then turn away). Space should release within
-      ~0.2 s and the event list should say "face lost". When you come back,
-      Space should NOT press again until you've returned to neutral.
-- [ ] **Cover the camera** with your hand while Space is held: it should release.
-- [ ] Lean back / slouch / move closer to the screen without tilting your head.
-      Any accidental spaces? (If yes, try recalibrating with C in your new position.)
+This is the key question for mouth and eyebrows. Watch the **Gestures** table
+("Live value") and the **Head and face** box.
 
-📋 **Report:** accidental spaces for talking / laughing / nodding / looking down;
-did face-lost release work; anything else that triggered by accident.
+- [ ] **Mouth:** relaxed and closed, the Open mouth value sits near **0%**. Open
+      your mouth clearly → it goes well past **30%** (red line) and shows **HELD**.
+- [ ] **Eyebrows:** relaxed, Raise eyebrows sits near **0%**. Raise them →
+      past **8%** and shows **HELD**.
+- [ ] **Blink** several times. Does Raise eyebrows jump? (It shouldn't much.)
+- [ ] **Smile** big. Does Open mouth or Raise eyebrows jump?
+- [ ] **Tilt your head up and down** without moving your eyebrows. Does Raise
+      eyebrows change? By how much?
+- [ ] **Turn your head left/right.** Does Open mouth change?
+- [ ] **Talk** for 30 s. What's the highest Open mouth value you see?
 
-## 3. Chrome dino game (10 min)
+📋 **Report** (rough numbers are fine):
+- Open mouth: relaxed ___%, clearly open ___%, while talking up to ___%
+- Raise eyebrows: relaxed ___%, raised ___%, while blinking up to ___%,
+  while tilting head up ___%
+- Did smiling trigger anything?
+- Gut feeling: is the eyebrow reading clean or jumpy?
 
-Open Chrome and go to **chrome://dino** (or turn off Wi-Fi to get it). Click the
-page once so it has focus.
+## 3. Keys mode in TextEdit (5 min)
 
-- [ ] Tilt up to start the game and to jump.
-- [ ] Play 5 rounds. Note your best score.
-- [ ] Does the jump feel instant, or late? Do you die because the jump came late?
-- [ ] Do you get accidental jumps?
-- [ ] After a few rounds, check the debug window **Speed** box.
+Mode = **Keys**. Open TextEdit, new document, click in it.
 
-📋 **Report:** best score; "feels instant / slightly late / too late"; Camera FPS,
-Total processing / frame, **Frame → key event (avg)**, dropped frames.
+- [ ] Tilt up → one **space**. (Held keys don't auto-repeat; that's expected.)
+- [ ] Turn left → one **a**. Turn right → one **d**.
+- [ ] Raise eyebrows → one **e**.
+- [ ] Open mouth → a **click** where the mouse pointer is (the text cursor jumps
+      there). Keep it open and move the real mouse: it drags (selects text).
+- [ ] The **Held right now** line (Control box) lists exactly what you're holding.
+- [ ] Hover right at a red line for a few seconds: nothing should flicker.
 
-## 4. Minecraft jumping (10 min)
+📋 **Report:** anything that didn't type / click; any flicker.
 
-Java or Bedrock edition, a creative or peaceful world.
+## 4. False triggers (5 min)
 
-- [ ] Tilt up → your character jumps. Keep your head tilted → keeps jumping
-      (holding Space). Return to neutral → stops.
-- [ ] Walk with your hands (W) and jump with your face over a few blocks.
-- [ ] In creative mode: double-tap Space with two quick tilts toggles flying. Does it work?
-- [ ] Press **Esc** (game menu) and **⌃⌥⌘K** while in full screen: does the kill
-      switch work in full screen (listen for the sound)?
-- [ ] Alt-tab / Cmd-tab out of Minecraft while Space is held. Nothing should stay stuck.
+Stay in TextEdit, Keys mode. Count unwanted characters / clicks.
 
-📋 **Report:** jumping works (yes/no); flying double-tap (yes/no); kill switch in full screen (yes/no); any stuck keys.
+- [ ] Talk normally for 1 minute (read something aloud).
+- [ ] Laugh a few times.
+- [ ] Nod "yes" and shake "no" like in conversation.
+- [ ] Look down at the keyboard and back up.
+- [ ] Blink a lot, smile, frown.
 
-## 5. Stuck-key checks (5 min)
+📋 **Report:** unwanted space / a / d / e / clicks for each activity.
 
-For each one, tilt up so Space is held first, then:
+## 5. Safety (5 min)
 
-- [ ] Press **Cmd+Q** in the debug window → app quits, Space is released.
-- [ ] Run again, hold Space, press **Ctrl+C** in Terminal → app quits, Space is released.
-- [ ] Run again, hold Space, close the **Terminal window** → app quits, Space is released.
-- [ ] Run again, hold Space, turn **off** Terminal's Accessibility permission in
-      System Settings → within ~1 s the debug window shows the red box and Space is released.
+- [ ] Hold a turn (A held), press **⌃⌥⌘K**: "pop", Control OFF, A released.
+      Press again: "tink", ON. Nothing fires until you return to neutral.
+- [ ] Hold your mouth open (left button held), turn away from the camera:
+      released within ~0.2 s; Recent events says "face lost".
+- [ ] Hold A, then switch the Mode picker: everything released.
+- [ ] Hold A, then Cmd+Q (or Ctrl+C in Terminal): nothing stays stuck.
+- [ ] Aim mode: turn your head so the pointer moves, then cover the camera → the
+      pointer stops immediately.
 
-How to tell Space is released after quitting: open TextEdit and press a letter
-key; if Space were stuck, the system would behave oddly (e.g. Space-related
-shortcuts). If anything ever stays stuck, tap the real Space bar once.
+📋 **Report:** anything that stayed held or kept moving.
 
-📋 **Report:** any case where Space stayed stuck.
+## 6. Aim mode: head moves the mouse (10 min)
 
-## 6. Comfort (ongoing)
+Mode = **Aim (mouse)**. Start on the desktop.
 
-- [ ] After 10 minutes, is your neck tired? Is the tilt amount comfortable?
-- [ ] Did you need to recalibrate during the session? Why (moved chair, slouched)?
+- [ ] Look straight: the pointer does **not** drift (deadzone).
+- [ ] Turn slightly past neutral → pointer moves slowly. Turn further → faster.
+- [ ] Turn left → pointer goes **left**; tilt up → pointer goes **up**.
+- [ ] Try the **Sensitivity** slider (right column): find the value that feels best.
+- [ ] Put the pointer on small targets (e.g. Dock icons) using only your head.
+- [ ] Open mouth to click a Dock icon (aim + click with your face only).
+- [ ] **In a game** (e.g. Minecraft, in a world, pointer locked): does turning
+      your head turn the camera? Does mouth-open attack/mine?
+- [ ] Press ⌃⌥⌘K while aiming: the pointer stops.
+
+📋 **Report:** best sensitivity; does it drift when still?; too slow / too fast
+near the center; did it work in a game (which); jittery or smooth?
+
+## 7. Google Snake (10 min)
+
+1. In Chrome, search Google for **snake** and click **Play** on the Snake game.
+2. In the debug window, set Mode = **Snake**. (Calibrate again with C if you moved.)
+3. Click the Snake game once so it has keyboard focus, keep your head centered.
+
+- [ ] Turn your head left → the snake turns **left** (one turn, not several).
+- [ ] Right, up, down each give **one** turn in the right direction.
+- [ ] After a turn, nothing else fires until your head comes back to the center
+      (the Mode box shows "bring your head back to the center"). Then the next
+      turn works.
+- [ ] Quick moves: turn left and immediately back. Does it register?
+- [ ] Play 5 games. Best score?
+
+If turns feel late, lower `Snake.holdTime` (e.g. 0.03) or `Snake.pressDegrees`
+(e.g. 8). If you get double turns (often from overshooting the center on the
+way back), raise `Snake.pressDegrees` (e.g. 12) or lower `Snake.neutralDegrees`
+(e.g. 4) so "center" is stricter.
+
+📋 **Report:** best score; missed turns?; double turns?; wrong-direction turns?;
+does returning to center feel natural or slow?
+
+## 8. Quick game check (optional, 5 min)
+
+- [ ] **Chrome dino** (chrome://dino), Keys mode: still jumps with tilt up.
+- [ ] **Minecraft**, Keys mode: turn left/right strafes (A/D), tilt up jumps,
+      mouth open attacks, eyebrows open the inventory (E).
 
 ---
 
 ## Report template (copy, fill in, paste back to Claude)
 
 ```
-Mac model / macOS version:
-Camera line (name, resolution, fps):
-Direction check: Tilt up went positive when tilting up? (yes / needed flipDirection)
+Mac / macOS / camera line:
+Frames line under the camera (mirrored / unmirrored):
 
-Speed:
-  Camera FPS:
-  Vision time / frame:
-  Total processing / frame (and max):
-  Camera delay:
-  Frame -> key event (avg):
-  Dropped frames (after ~5 min):
+Direction pad: left __ right __ up __ down __ (correct? flips needed?)
 
-Calibration jitter:
-Tilt-up wobble when still:
-Comfortable tilt-up reaches about:   ° (big tilt:   °)
+Speed: Camera FPS __  Vision __ ms (landmarks __ ms)  Processing __ ms (max __)
+       Frame -> key/click avg __ ms   Dropped frames __
 
-TextEdit: spaces typed out of 20 tilts:     flicker? 
-Kill switch works: (yes/no)   in full screen: (yes/no)
-Accidental spaces — talking:   laughing:   nodding:   looking down:
-Face lost released Space: (yes/no)
-Dino: best score:    feel (instant / slightly late / too late):
-Minecraft: jump works:   hold-to-keep-jumping:   flying double-tap:
-Any stuck keys? (what were you doing):
+Calibration jitter: pitch ±__  yaw ±__  mouth ±__%  brows ±__%
+
+Mouth: relaxed __%  open __%  talking up to __%
+Eyebrows: relaxed __%  raised __%  blinking up to __%  head tilted up __%
+Smiling triggered: 
+Eyebrow reading clean or jumpy:
+
+TextEdit (Keys): space __ a __ d __ e __ click __ (all worked?)  flicker?
+False triggers — talking:  laughing:  nodding:  looking down:  blinking/smiling:
+
+Safety: kill switch __  face lost __  mode switch __  quit __  aim stops __
+
+Aim: best sensitivity __  drift when still? __  feel near center __
+     worked in a game? (which) __  smooth or jittery __
+
+Snake: best score __  missed turns __  double turns __  wrong direction __
+       return-to-center feel __
 
 What felt worst / what made you want to stop using it:
 Anything else:

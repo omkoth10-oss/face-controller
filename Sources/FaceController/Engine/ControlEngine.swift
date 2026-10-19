@@ -407,6 +407,10 @@ final class ControlEngine {
         aim.stopMoving()
         resetAllGestures(requireNeutral: true)
         calibrator.start()
+        // Old values were relative to the old neutral face: don't show them.
+        latestValues = [:]
+        snapshot.relativeAngles = nil
+        snapshot.playerOffset = nil
         snapshot.calibration = .inProgress(progress: 0, faceVisible: snapshot.faceVisible)
         logEvent("Calibration started: look straight at the camera, face relaxed")
         publish(force: true)

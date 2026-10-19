@@ -66,18 +66,19 @@ Decide by prototyping and testing, not guessing.
 - **Build:** Swift Package Manager executable (`Package.swift`, swift-tools 5.9, macOS 13+), run with `swift run`. No third-party dependencies.
 - **CI:** GitHub Actions (`.github/workflows/build.yml`) runs `swift build` (debug + release) on a macOS runner on every push to `main` and `claude/**` branches, PRs to `main`, and by hand. Cloud sessions can't compile macOS code, so this is the compile check: don't call work done until it's green.
 
-## Code map (Phase 1)
+## Code map (Phase 2)
 All code is in `Sources/FaceController/`:
-- `Support/Config.swift`: **every tunable number** (thresholds, timings, camera, smoothing, kill-switch key).
-- `Camera/CameraManager.swift`: AVFoundation capture, picks fastest fps (≤60) then size closest to 640x480, drops late frames.
-- `Tracking/HeadPoseTracker.swift`: Vision → pitch/yaw/roll. `Tracking/OneEuroFilter.swift`: smoothing.
-- `Calibration/Calibrator.swift`: neutral pose = median of 3 s of face-visible samples.
-- `Gestures/ThresholdGesture.swift`: hysteresis + hold time → press/release.
-- `Input/KeyboardOutput.swift`: CGEvent keys; tracks held keys; "block reasons" (control off, calibrating, no permission, quitting) release everything and refuse presses.
-- `Engine/ControlEngine.swift`: the tight loop on one serial queue (camera → Vision → gesture → key), face-lost rule, 50 ms watchdog, snapshots for the UI.
-- `Safety/`: `GlobalHotKey.swift` (Carbon kill switch), `ExitGuard.swift` (atexit + SIGINT/SIGTERM/SIGHUP/SIGQUIT release keys), `Permissions.swift`.
-- `App/`: `FaceControllerApp.swift` (@main, activation policy), `AppController.swift` (wiring, permissions, kill switch).
-- `UI/`: `DebugView.swift`, `CameraPreview.swift`.
+- `Support/Config.swift`: **every tunable number and the key mappings** (camera, smoothing, directions flips, gesture thresholds, per-mode bindings, aim, Snake, safety, kill-switch key).
+- `Camera/CameraManager.swift`: AVFoundation capture, picks fastest fps (≤60) then size closest to 640x480, drops late frames, asks for unmirrored frames and reports whether they're mirrored.
+- `Tracking/HeadPoseTracker.swift`: Vision face rectangles (rev 3) → pitch/yaw/roll, then face landmarks (76 points) on that face. `Tracking/ExpressionReader.swift`: landmarks → mouth open / eyebrow height in % of eye distance. `Tracking/PlayerDirections.swift`: the ONE place camera angles become the player's left/right/up/down (mirror-corrected). `Tracking/OneEuroFilter.swift`: smoothing.
+- `Calibration/Calibrator.swift`: neutral face (head angles + mouth + eyebrows) = median of 3 s of face-visible samples, plus jitter per value.
+- `Gestures/GestureCatalog.swift`: gesture IDs, modes (Keys / Aim / Snake), bindings (hold/tap). `Gestures/ThresholdGesture.swift`: hysteresis + hold time → press/release.
+- `Aim/AimController.swift`: head offset → pointer speed (deadzone, power curve, sensitivity), eased, sent by its own 120 Hz timer; stops when data goes stale.
+- `Input/VirtualInput.swift`: CGEvent keys, left mouse button and mouse movement (with deltas, for pointer-locked games); tracks what's held; "block reasons" (control off, calibrating, no permission, quitting) release everything and refuse input.
+- `Engine/ControlEngine.swift`: the tight loop on one serial queue (camera → Vision → gestures/aim → output), mode switching, Snake gating, face-lost and expression-lost rules, 50 ms watchdog, snapshots for the UI.
+- `Safety/`: `GlobalHotKey.swift` (Carbon kill switch), `ExitGuard.swift` (atexit + SIGINT/SIGTERM/SIGHUP/SIGQUIT release everything), `Permissions.swift`.
+- `App/`: `FaceControllerApp.swift` (@main, activation policy, window size), `AppController.swift` (wiring, permissions, kill switch, mode/sensitivity).
+- `UI/`: `DebugView.swift` (3-column layout), `GestureTable.swift`, `DirectionPad.swift`, `Components.swift`, `CameraPreview.swift`.
 
 ## Features (priority order)
 **Must-haves**
@@ -112,7 +113,7 @@ All code is in `Sources/FaceController/`:
 
 ## Roadmap
 1. **Swift prototype** (2–3 sessions): camera + Vision tracking, head tilt up = hold Space, calibration, debug window. Test in TextEdit → Chrome dino game → Minecraft. *(Built 2026-10-18, awaiting owner testing.)*
-2. **Core gestures + aiming** (4–6 sessions): turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency measurement.
+2. **Core gestures + aiming** (4–6 sessions): turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency measurement. *(First version built 2026-10-19 with a Snake mode for Google Snake; awaiting owner testing.)*
 3. **Solve head move-vs-aim** (2–3 sessions): prototype options, test, pick one.
 4. **Settings UI + mapping + onboarding** (3–5 sessions).
 5. **Presets, speed mode, testing across games, bug fixes** (3–6 sessions).
@@ -161,18 +162,23 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 - Don't add features outside this brief without asking.
 - **After every change** (code, decision, or plan update): update this file to match, then commit and push to GitHub so cloud and local sessions always stay in sync.
 - Note: cloud sessions can't use the webcam. Write code in the cloud; the owner tests on his Mac.
+- **Player-perspective directions:** every direction (gestures, aiming, labels, docs) is from the player's point of view: their left is left, their up is up, regardless of camera mirroring. Convert camera angles to player directions only in `Tracking/PlayerDirections.swift`, keep the on-screen Direction pad accurate, and keep the `Config.Directions` flip settings working.
 
-## Phase 1 decisions and starting settings (2026-10-18, untested on hardware)
-- **Head angles:** `VNDetectFaceRectanglesRequest` revision 3 (fastest Vision face request; continuous pitch/yaw/roll). Landmarks wait for Phase 2 expressions.
-- **Pitch direction is unverified:** Apple doesn't document the sign. Code assumes tilting UP makes Vision pitch NEGATIVE. `Config.TiltUp.flipDirection = true` swaps it. First thing to confirm in testing.
-- **Tilt up = hold Space:** press at 10°, release below 6°, 80 ms hold. Release is immediate.
-- **Smoothing:** One Euro filter (minCutoff 2.5 Hz, beta 0.1): heavy when still, near zero when moving fast.
-- **Calibration:** 3 s of face-visible time at launch; median of samples; C (window focused) or button recalibrates. Presses blocked while calibrating.
+## Decisions and starting settings (Phases 1–2; Phase 2 untested on hardware)
+- **Head angles:** `VNDetectFaceRectanglesRequest` revision 3 (fastest Vision face request; continuous pitch/yaw/roll).
+- **Player directions:** tilt UP = Vision pitch NEGATIVE (worked in Phase 1 on the owner's Mac). Turn to the player's LEFT = Vision yaw POSITIVE in unmirrored frames (assumed from Vision's rotation convention: roll is documented counterclockwise-positive, pitch matched; yaw not yet confirmed on hardware). Frames are requested unmirrored; if a camera delivers mirrored frames the code flips yaw automatically. `Config.Directions.flipHorizontal` / `flipVertical` are manual overrides. Preview is mirrored like a selfie.
+- **Expressions:** Vision face landmarks (revision 3, 76 points) run on the face already found. Mouth open = inner-lip height; eyebrows = brow centers above the eye-CORNER midpoints (corners don't move when blinking), both measured along the face's own up axis (roll-proof), in % of eye distance (distance-proof), relative to the calibrated neutral. If Vision isn't reliable enough, the fallback to evaluate is MediaPipe Face Landmarker blendshapes (explain and ask before switching).
+- **Keys mode:** tilt up = hold Space, turn left = hold A, turn right = hold D, mouth open = hold left mouse button, eyebrows raised = hold **E** (picked: common "use/interact" key, opens Minecraft inventory; easy to see in testing).
+- **Thresholds:** head 10° press / 6° release / 80 ms hold (all four directions). Mouth 30% / 18% / 80 ms. Eyebrows 8% / 5% / 80 ms. Release is immediate.
+- **Aim mode:** head = joystick-style pointer speed. Deadzone 2.5° horizontal / 2.0° vertical; full speed at 15° / 10°; max 1500 / 1000 pt/s; power curve exponent 1.8; sensitivity slider 0.25–3×; 50 ms speed easing; 120 Hz output timer; events carry deltas so pointer-locked games work; left-button-held movement is sent as drag. Head keys (Space/A/D) are off in Aim mode; mouth/eyebrows still work. Toggling happens in the debug window's Mode picker (Phase 3 solves head doing both jobs).
+- **Snake mode (owner request, 2026-10-19):** head up/down/left/right = one TAP of ↑ ↓ ← → (30 ms key press), 10° press, 50 ms hold; after a tap nothing fires until the head is back within 5° of neutral on both axes. Expressions off. Arrow key events carry the fn + numeric-pad flags like real arrow keys.
+- **Smoothing:** One Euro filter (minCutoff 2.5 Hz; beta 0.1 for head degrees, 0.03 for expression %).
+- **Calibration:** 3 s of face-visible time at launch; median of samples (head + mouth + eyebrows); jitter shown per value with a warning when it's over a third of that gesture's press threshold. C (window focused) or button recalibrates. Input blocked while calibrating.
 - **Kill switch:** ⌃⌥⌘K (Control+Option+Command+K), Carbon `RegisterEventHotKey` (works in any app, needs no permission). Plays "Tink" (on) / "Pop" (off). Control starts ON after the first calibration (`Config.Safety.startWithControlOn`).
-- **Safety:** keys released on control off, face lost > 200 ms, camera frames stopping (watchdog), Accessibility revoked (polled every 0.5 s), quit/Ctrl+C/Terminal closed. After any release the gesture needs a return to neutral before it can fire again. Crash / `kill -9` can't be caught: tap real Space.
-- **Key events:** `CGEvent` from a `.hidSystemState` source, posted at `.cghidEventTap`, modifier flags cleared. Held keys don't auto-repeat (expected; games track held state).
+- **Safety:** everything (keys, mouse button, pointer movement) released/stopped on control off, face lost > 200 ms (pointer stops at once), mouth/eyebrows unreadable > 200 ms (their outputs only), camera frames stopping (watchdog), mode switch, recalibration, Accessibility revoked (polled every 0.5 s), quit/Ctrl+C/Terminal closed. After any release gestures need a return to neutral before firing again. Crash / `kill -9` can't be caught: tap the real key.
+- **Input events:** `CGEvent` from a `.hidSystemState` source, posted at `.cghidEventTap`, modifier flags cleared (arrows get fn + numeric pad). Held keys don't auto-repeat (expected; games track held state).
 - **Camera:** fastest fps up to 60 (most built-in Mac cameras: 30), resolution closest to 640x480 within 480x360–1280 wide, frame rate locked (no low-light slowdown).
-- **Latency shown:** camera capture timestamp → key event sent (plus Vision time, total processing, camera delay, FPS, dropped frames).
+- **Latency shown:** camera capture timestamp → key/click event sent (plus Vision time incl. landmarks, total processing, camera delay, FPS, dropped frames).
 - **Permissions:** when run via `swift run` they belong to Terminal (or iTerm/VS Code). The window shows step-by-step instructions + buttons to System Settings.
 
 ## Progress Log
@@ -185,8 +191,9 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-18: Owner chose **Google Snake** (google.com search "snake") as the first real game to test after Phase 2. Needs head up/down/left/right → arrow keys, 4 directions.
 
+- 2026-10-19: **Phase 2 built** (code only; compiles on macOS CI, not yet run on a real Mac). Added: player-perspective directions with mirror correction, Direction pad and `Config.Directions` flips; turn left/right = hold A/D; Vision face landmarks for mouth open (= hold left mouse) and eyebrow raise (= hold E), measured relative to the calibrated neutral face; head-to-mouse aiming (deadzone, response curve, sensitivity slider, smoothing, 120 Hz output) behind an Aim mode; Snake mode (tap arrows, return to center between turns); Keys / Aim / Snake picker; gesture table showing every gesture's live value, thresholds and firing state; expression-lost safety rule; mouse button and movement included in all safety releases. `KeyboardOutput` replaced by `VirtualInput`. README and TESTING.md rewritten for Phase 2 (with a Snake section).
+
 ## Next Steps
-- Owner runs Phase 1 on the Mac and works through TESTING.md, then pastes back the report (first: does "Tilt up" go positive when tilting up? camera fps, processing time, frame→key latency, false triggers when talking/laughing).
-- Tune `Config.swift` from those numbers (thresholds, hold time, smoothing, pitch direction).
-- First real-game target after Phase 2: **Google Snake** (4 head directions → arrow keys, tap-style presses, a simple "Snake" mode/preset).
-- Then start Phase 2: turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency work.
+- Owner runs Phase 2 and works through TESTING.md, then pastes back the report. Most important: Direction pad correct in all 4 directions (yaw sign is the main unconfirmed assumption); mouth/eyebrow numbers (relaxed vs. active vs. talking/blinking) to judge whether Vision landmarks are reliable enough or MediaPipe should be evaluated; aim feel and best sensitivity; Google Snake score / missed or double turns; speed numbers.
+- Tune `Config.swift` from those numbers.
+- Then Phase 3: solve the head's two jobs (move vs. aim): prototype the options in the brief and test.
