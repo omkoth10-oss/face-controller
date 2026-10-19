@@ -183,7 +183,10 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-18: Owner ran Phase 1 on his Mac: "looks okay." Decided directions are always from the player's point of view (mirror-corrected). Detailed TESTING.md numbers not reported yet.
 
+- 2026-10-18: Owner chose **Google Snake** (google.com search "snake") as the first real game to test after Phase 2. Needs head up/down/left/right → arrow keys, 4 directions.
+
 ## Next Steps
 - Owner runs Phase 1 on the Mac and works through TESTING.md, then pastes back the report (first: does "Tilt up" go positive when tilting up? camera fps, processing time, frame→key latency, false triggers when talking/laughing).
 - Tune `Config.swift` from those numbers (thresholds, hold time, smoothing, pitch direction).
+- First real-game target after Phase 2: **Google Snake** (4 head directions → arrow keys, tap-style presses, a simple "Snake" mode/preset).
 - Then start Phase 2: turn left/right, mouth open, eyebrow raise, head-to-mouse aim, false-trigger fixes, latency work.
