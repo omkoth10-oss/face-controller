@@ -23,6 +23,8 @@ Working name: TBD (placeholder "Face Controller").
 - **Dev machine:** Apple Silicon Mac (M1–M4).
 - **Directions are always from the player's point of view** (decided 2026-10-18): turning your head to YOUR left = left in the game, tilting YOUR head up = up, no matter whether the camera image is mirrored or not. The camera preview should be mirrored like a selfie so it feels natural, and the code must correct for any mirroring so controls never feel backwards.
 
+- **Floating center (owner request, 2026-10-18):** the center should follow the player's head: wherever the head comes to rest becomes the new center, so moves are measured from where you are now, not from a fixed calibrated spot. Default in Snake mode; must not break held keys (don't let the center chase a direction while it's being held). Optional per mode, with a speed setting.
+
 ### Open design problem: head does two jobs
 Head movement is wanted for both movement keys and mouse aiming. These conflict. Options to explore and test:
 - Head = aim, facial expressions = movement/actions.
@@ -197,6 +199,8 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 - 2026-10-18: Owner tested Phase 2 in **Google Snake**: very hard to play. All 4 directions: have to move head too far, feels laggy, gestures barely trigger, and after the first turn it almost never fires again (~1 success in 10 tries), so turns can't be chained. Likely causes: Snake re-arm requires BOTH axes within 5° of neutral (too strict, and neutral posture drifts), 10° press threshold too big, smoothing adds lag. Fix requested next session (see Next Steps).
 
 - 2026-10-19: **Snake mode fixed (code only; compiles on macOS CI, not yet tested on the Mac).** New `SnakeController`: per-axis re-arm (only the axis that fired, at 45% of the press threshold by default), flick (head-speed) triggering, reverse-flick block, 100 ms minimum between turns. Press threshold 5°, hold 30 ms, Snake-only lighter smoothing on raw angles, landmarks skipped in Snake. Drift correction while resting near center. Recenter button / R / ⌃⌥⌘R (all modes). Snake tuning panel: live sliders (press, re-arm, hold, smoothing, flick speed, auto-recenter) saved between launches, Copy button for the values, "Right now" per-axis status explaining why a turn isn't firing, last turn + frame→key latency + turn counts. TESTING.md has a Snake tuning guide.
+
+- 2026-10-18: Owner retested Snake after the fixes: "much better," but still a little buggy. Requested a floating center that follows the head. Keep improving Snake in small steps.
 
 ## Next Steps
 - Owner re-tests **Google Snake** with TESTING.md section 7: recenter first, tune with the sliders, then report best score (before/after tuning), the copied slider values, frame→key average, turns by flick vs. position, and the most common "Right now" message when a turn didn't fire.
