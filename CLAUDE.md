@@ -21,6 +21,7 @@ Working name: TBD (placeholder "Face Controller").
 - **No voice commands.** Face only.
 - **Native Swift app** from the start (no Python prototype).
 - **Dev machine:** Apple Silicon Mac (M1–M4).
+- **Directions are always from the player's point of view** (decided 2026-10-18): turning your head to YOUR left = left in the game, tilting YOUR head up = up, no matter whether the camera image is mirrored or not. The camera preview should be mirrored like a selfie so it feels natural, and the code must correct for any mirroring so controls never feel backwards.
 
 ### Open design problem: head does two jobs
 Head movement is wanted for both movement keys and mouse aiming. These conflict. Options to explore and test:
@@ -179,6 +180,8 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 - 2026-10-18: **Phase 1 prototype built** (code only; compiles on macOS CI, not yet run on a real Mac). SwiftPM app with SwiftUI debug window: camera preview, pitch/yaw/roll (raw + vs. neutral), calibration status, threshold bar with press/release lines, "% to trigger", Space held, control ON/OFF, FPS, Vision/processing time, frame→key latency, recent safety events, permission instructions. Gesture: tilt head up = hold Space. Added README.md (setup, permissions, kill switch, tuning), TESTING.md (TextEdit → Chrome dino → Minecraft checklist + report template), .gitignore, and the GitHub Actions macOS build.
 
 - 2026-10-18: Added the owner's ideas backlog, long-term vision, and competitor update (PlayAbility, GameFace archived) to this brief. Core decisions unchanged (Mac first, no voice for now). Nothing built from the backlog yet.
+
+- 2026-10-18: Owner ran Phase 1 on his Mac: "looks okay." Decided directions are always from the player's point of view (mirror-corrected). Detailed TESTING.md numbers not reported yet.
 
 ## Next Steps
 - Owner runs Phase 1 on the Mac and works through TESTING.md, then pastes back the report (first: does "Tilt up" go positive when tilting up? camera fps, processing time, frame→key latency, false triggers when talking/laughing).
