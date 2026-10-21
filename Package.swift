@@ -7,6 +7,10 @@ import PackageDescription
 // Face Controller is a single executable target. Build and run it with:
 //     swift run
 // SwiftPM compiles every .swift file under Sources/FaceController into one program.
+//
+// Automated tests (no webcam needed) live in Tests/FaceControllerTests and run with:
+//     swift test
+// They feed simulated 30 fps head movement into the gesture logic.
 // Apple frameworks (AVFoundation, Vision, AppKit, Carbon, ...) are linked
 // automatically because the source files `import` them. No third-party
 // dependencies are used.
@@ -19,6 +23,13 @@ let package = Package(
         .executableTarget(
             name: "FaceController",
             path: "Sources/FaceController"
-        )
+        ),
+        // `@testable import FaceController` lets the tests use the app's internal
+        // types directly (SwiftPM supports testing an executable target).
+        .testTarget(
+            name: "FaceControllerTests",
+            dependencies: ["FaceController"],
+            path: "Tests/FaceControllerTests"
+        ),
     ]
 )

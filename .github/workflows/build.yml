@@ -1,6 +1,8 @@
-# Compiles the app on a real Mac (GitHub's macOS runner) on every push.
+# Compiles the app on a real Mac (GitHub's macOS runner) on every push, and runs
+# the automated tests (simulated head movement, no webcam needed).
 # The cloud dev environment is Linux and can't build macOS apps, so this is
-# how we check that the code compiles before testing it on the Mac.
+# how we check that the code compiles and the gesture logic works before
+# testing it on the Mac.
 name: macOS build
 
 on:
@@ -15,7 +17,7 @@ on:
 
 jobs:
   build:
-    name: swift build (macOS)
+    name: swift build + test (macOS)
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -33,3 +35,6 @@ jobs:
 
       - name: Build (release)
         run: swift build -c release
+
+      - name: Run the automated tests
+        run: swift test
