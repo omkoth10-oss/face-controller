@@ -224,6 +224,8 @@ Ideas the owner wants to *maybe* build. Not committed: ask before building anyth
 
 - 2026-10-19: **Phase 3 options built (code only; compiles on macOS CI, not yet tested on the Mac).** New Minecraft mode with a head option picker: 1 Face moves, head aims (mouth = W, eyebrows = Space); 2 Mode switch (tilt toward a shoulder flips MOVE W/A/S/D ↔ AIM, sounds, pause while tilted, Switch now button); 3 Split zones (aim, plus W/A/S/D past the walk zone). Engine bindings/thresholds are now computed live per mode/option/job. Minecraft panel, always-on-top overlay label, floating center + safety rules in every option, closing the debug window quits even with the overlay up. Snake and Follow time defaults updated. TESTING.md section 8 (same course for every option + report), README Minecraft section.
 
+- 2026-10-21: Owner wants a **Scroll mode for YouTube** next (before Phase 3): scroll with his head. Planned as two sub-options: smooth page scrolling (head tilt = scroll wheel, speed by angle) and Shorts mode (one head flick = next/previous Short via arrow keys, reusing Snake's tap logic). Phase 3 waits until after this.
+
 ## Next Steps
 - Owner tests the three **Minecraft** options (TESTING.md 8) in full-screen Chrome on classic.minecraft.net and picks one. Report per option: look/walk/overall 1–5, accidental switches/walking, best slider values, worst part, and whether the view turns in the browser at all (pointer-lock deltas) and whether the overlay shows over full-screen Chrome.
 - Then refine the chosen option (and decide whether option 1 needs a third expression, e.g. smile = click; ask first). Right click (place block) has no gesture yet.
