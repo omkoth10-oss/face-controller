@@ -48,6 +48,19 @@ To stop the app: press **Cmd+Q** in its window, close the window, or press
 > If `swift run` complains about missing developer tools, run
 > `xcode-select --install`, or `sudo xcode-select -s /Applications/Xcode.app`.
 
+### Automated tests (no webcam needed)
+
+```bash
+swift test
+```
+
+The tests feed simulated head movement (30 frames a second: quick turns that
+swing back past the center, slow tilts, nods) into the gesture logic and check
+the results: one flick = one Snake turn, combos and diagonals fire every turn,
+swing-backs and leaks are ignored, one nod = one Short, the floating center only
+follows a resting head, scrolling speeds up smoothly and stops promptly, and so
+on. GitHub runs them on a Mac after every push.
+
 ## Permissions (one-time setup)
 
 The app needs two permissions. **Because you start it from Terminal, macOS gives
@@ -369,6 +382,8 @@ Sources/FaceController/
                 GameOverlay.swift (label over the game), FloatingCenterBox.swift (+ Turn log),
                 GestureTable.swift, DirectionPad.swift, Components.swift, CameraPreview.swift
   Support/      Config.swift (ALL tunable numbers and key mappings), Timing.swift
+Tests/FaceControllerTests/
+                one test file per component, HeadMotion.swift (simulated 30 fps head motion)
 ```
 
 ## Notes
