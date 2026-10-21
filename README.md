@@ -6,8 +6,9 @@ almost any game.
 
 > **Status: Phase 3 prototype.** Head gestures (tilt up, turn left/right),
 > facial expressions (open mouth, raise eyebrows), head-to-mouse aiming, a
-> Snake mode for Google Snake, and a Minecraft preset with three switchable ways
-> for the head to both walk and aim. A debug window shows exactly what the
+> Snake mode for Google Snake, a Minecraft preset with three switchable ways
+> for the head to both walk and aim, and a Scroll mode for YouTube (smooth page
+> scrolling, or one nod = next Short). A debug window shows exactly what the
 > tracker sees, every gesture's live value, how close you are to triggering, and
 > how fast everything is.
 
@@ -88,6 +89,7 @@ and run `swift run` again.
 | **Aim (mouse)** | moves the mouse pointer (like a joystick) | hold **left mouse button** | hold **E** |
 | **Snake** | up / down / left / right (or a quick flick) = **one tap** of ↑ ↓ ← → | off | off |
 | **Minecraft** | walks and/or looks around, depending on the head option (below) | walk forward **W** (option 1) / break block = **left click** (2, 3) | jump = **Space** |
+| **Scroll** | smooth: tilt = **scroll wheel** (faster the further you tilt) · Shorts: one nod = **↓** next / **↑** previous | **Space** = play / pause (switchable) | off |
 
 - **Hold** gestures keep the key/button down for as long as you hold the gesture.
   A quick open-and-close of the mouth is a click; keeping it open is a held click
@@ -140,6 +142,28 @@ A small label floats at the top of the screen over the game (**AIM** / **MOVE** 
 and can be switched off in the panel. Play the game in full-screen Chrome so the
 pointer stays inside it. The floating center, kill switch and every safety rule
 work the same in all three options. TESTING.md section 8 has a test for each.
+
+### Scroll mode (YouTube)
+
+Two options, picked in the **Scroll** panel (right column; saved):
+
+- **Smooth scroll.** Tilt your head down to scroll down, up to scroll up, with
+  real scroll-wheel events. Inside a small **deadzone** nothing happens; past it
+  the speed grows with the tilt (gently at first, for reading, then faster).
+  The speed glides up instead of jumping and slows down quickly when you look
+  back to center. Sliders: **Deadzone** (default ±4°) and **Speed** (default 1×);
+  a **Reverse direction** switch if a page scrolls the wrong way. It scrolls
+  whatever is under the mouse pointer.
+- **Shorts.** One quick nod down = next Short (**↓**), one nod up = previous
+  (**↑**). This is Snake's exact tap logic (flicks, re-arm, extra-turn guard) with
+  its own saved sliders, and the bounce-back and double-turn blocks **on**: in
+  Shorts an extra flick would be a wrong video, so your head swinging back up
+  after a nod down is blocked instead of going back a video. The Turn log shows
+  every nod.
+- **Mouth = play / pause** (Space), switchable. The mouth must stay open about
+  0.3 s, so talking and quick laughs don't pause the video.
+
+Control off, face lost, recenter and mode changes stop scrolling immediately.
 
 ### Floating center (on in every mode)
 
@@ -242,6 +266,11 @@ its label.
 | `Snake.bounceBlock` | 0.35 s | When the bounce-back block is ON: after re-arming, ignore turns the opposite way on that axis for this long. |
 | `Snake.sameDirectionCooldown` | 0.25 s | When the double-turn block is ON: the same direction can't fire twice within this time. |
 | `FloatingCenter.snakeZoneFraction` / `snakePauseAfterTurn` | 0.5 / 0.8 s | Snake: the center only follows within half the re-arm zone, and waits this long after each turn. |
+| `Scroll.defaultDeadzoneDegrees` / `defaultSpeed` | 4° / 1× | Starting values of the smooth-scroll sliders. |
+| `Scroll.fullSpeedDegrees` / `maxSpeed` / `curveExponent` | 15° / 1500 points/s / 2.0 | Tilt for full speed, full speed at 1×, response curve. |
+| `Scroll.speedUpTime` / `slowDownTime` | 0.25 s / 0.10 s | Smooth acceleration: how quickly the scroll speed glides up / down. |
+| `Scroll.shortsHoldTime` / `shortsBounceBlockEnabled` / `shortsSameDirectionBlockEnabled` | 120 ms / on / on | Shorts' starting values that differ from Snake's. |
+| `Scroll.mouthHoldTime` / `defaultMouthPlayPause` | 0.3 s / on | Mouth must stay open this long for play/pause; whether it's on at first. |
 | `Minecraft.defaultOption` | option 1 | Head option picked on first launch (then the panel's choice is saved). |
 | `Minecraft.faceMovesBindings` / `actionBindings` / `headWalkBindings` | see Minecraft preset | What each gesture does in the options (keys W A S D, Space, left click). |
 | `Minecraft.defaultSwitchTiltDegrees` / `switchHoldTime` | 15° / 0.15 s | Option 2: tilt toward a shoulder this far, this long, to switch MOVE ↔ AIM (slider). |
@@ -282,7 +311,10 @@ its label.
 - **Direction** pad: which way the app thinks *you* are moving your head.
 - **Control** ON/OFF, the kill-switch hotkey, why input is blocked (if it is),
   and what's held right now.
-- **Mode** picker: Keys / Aim (mouse) / Snake / Minecraft.
+- **Mode** picker: Keys / Aim (mouse) / Snake / Minecraft / Scroll.
+- **Scroll** panel (Scroll mode only): Smooth scroll / Shorts picker, live scroll
+  speed, Deadzone and Speed sliders, Reverse switch, mouth play/pause switch.
+  In Shorts, the Snake-style **Shorts flick tuning** panel and the Turn log.
 - **Minecraft** panel (Minecraft mode only): head option picker, what every
   gesture does in that option, option 2's big MOVE / AIM indicator with the
   shoulder-tilt bar and a **Switch now** button, the option's sliders (switch
@@ -328,10 +360,12 @@ Sources/FaceController/
                 HeadOptions.swift (Minecraft's three head options, saved settings,
                 option 2's tilt-to-switch gesture)
   Aim/          AimController.swift: head → mouse speed (deadzone, curve, 120 Hz output)
+  Scroll/       ScrollController.swift: Scroll mode settings, tilt → scroll speed with
+                easing (ScrollMotion), 120 Hz scroll-wheel output
   Input/        VirtualInput.swift: CGEvent keys, mouse button and movement; tracks what's held
   Engine/       ControlEngine.swift: the tight loop, camera → Vision → gestures → output
   Safety/       GlobalHotKey.swift (kill switch), ExitGuard.swift (release on quit), Permissions.swift
-  UI/           DebugView.swift, SnakePanel.swift, MinecraftPanel.swift,
+  UI/           DebugView.swift, SnakePanel.swift, MinecraftPanel.swift, ScrollPanel.swift,
                 GameOverlay.swift (label over the game), FloatingCenterBox.swift (+ Turn log),
                 GestureTable.swift, DirectionPad.swift, Components.swift, CameraPreview.swift
   Support/      Config.swift (ALL tunable numbers and key mappings), Timing.swift

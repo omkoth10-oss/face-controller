@@ -1,4 +1,4 @@
-# Testing checklist (Phases 2–3)
+# Testing checklist (Phases 2–3, Scroll mode)
 
 Work through these in order. Write down the numbers marked **📋 Report**; at the
 end there's a template to paste back to Claude.
@@ -22,6 +22,7 @@ bigger now (three columns). If it doesn't fit your screen, it scrolls.
 | **Aim (mouse)** | moves the mouse pointer like a joystick | hold left mouse button | hold E |
 | **Snake** | up/down/left/right (or a quick flick) = one tap of ↑ ↓ ← → | off | off |
 | **Minecraft** | depends on the head option (section 8) | W (option 1) / break block (2, 3) | jump |
+| **Scroll** | smooth: tilt = scroll the page · Shorts: one nod = next / previous Short | play / pause (Space, switchable) | off |
 
 Switching mode releases everything. The kill switch **⌃⌥⌘K** still turns all of
 it off from any app.
@@ -396,7 +397,62 @@ the worst part.
 📋 **Report:** which option you'd keep and why, and **what made you want to stop
 using it**.
 
-## 9. Quick game check (optional, 5 min)
+## 9. YouTube: Scroll mode (15 min)
+
+Scroll mode has two options (Scroll panel, right column): **Smooth scroll** for
+pages and comments, and **Shorts** for flicking through YouTube Shorts.
+
+### Setup
+
+1. In Chrome, open **youtube.com**.
+2. In the debug window, set Mode = **Scroll**.
+3. Sit naturally and press **⌃⌥⌘R** (Recenter).
+4. Put the mouse pointer over the YouTube page and click it once: scrolling goes
+   to whatever is under the pointer, and the keys (↓ ↑ Space) go to the page you
+   clicked, not the debug window.
+
+### Smooth scroll
+
+Tilt down = scroll down, tilt up = scroll up; the further you tilt, the faster.
+Back to center = stop.
+
+- [ ] A small tilt down scrolls slowly (you can read while it moves); more tilt
+      is faster. Tilt up scrolls up.
+- [ ] It starts gently (no jump) and stops promptly when you look back to center.
+- [ ] Reading still for 30 s: it never scrolls by itself. Nodding a little while
+      talking: does it scroll? (If yes, raise **Deadzone**.)
+- [ ] Direction is right. (If tilting down scrolls UP, switch on **Reverse
+      direction** and tell me.)
+- [ ] On a video: keep your mouth open about 0.3 s → it pauses; again → it
+      plays. Talking or a quick laugh doesn't pause it.
+- [ ] While scrolling, press ⌃⌥⌘K: it stops at once. Look away from the camera:
+      it stops.
+
+📋 **Report:** best **Deadzone** and **Speed**; can you read comfortably while
+it scrolls; any scrolling you didn't mean; did mouth play/pause work (and did
+talking or laughing trigger it); the worst part.
+
+### Shorts
+
+Open **youtube.com/shorts**, click the video once, then set the Scroll panel to
+**Shorts**. One quick nod down = next Short (↓). One quick nod up = previous
+Short (↑). Come back to center between nods.
+
+- [ ] Nod down 10 times, slowly enough to watch a second of each: count the
+      videos. It should be exactly 10.
+- [ ] After a nod down, your head swinging back up must NOT go back a video. (A
+      red "bounce-back block" line in the Turn log is that protection working.)
+- [ ] Nod up: previous Short, exactly one.
+- [ ] Turning your head left/right (looking away) never changes the video.
+- [ ] Looking down at your desk or phone: does it skip a video? (If yes, raise
+      **Hold time** in the Shorts panel.)
+- [ ] Mouth open ~0.3 s = play / pause.
+
+📋 **Report:** nods vs. videos (e.g. "10 nods → 10 videos"), any double skips
+or going back, red/orange Turn log lines (screenshot), and your values (**Copy**
+button in the Shorts panel).
+
+## 10. Quick game check (optional, 5 min)
 
 - [ ] **Chrome dino** (chrome://dino), Keys mode: still jumps with tilt up.
 - [ ] **Minecraft**, Keys mode: turn left/right strafes (A/D), tilt up jumps,
@@ -451,6 +507,12 @@ Minecraft (classic.minecraft.net), Chrome full screen? __
   Sensitivity __   view turned in the game? __   game let go of the mouse on click? __
   Label visible over the game? __   ⌃⌥⌘K stopped walking? __   face lost stopped? __
   Option I'd keep: __   why: __
+
+YouTube Scroll mode:
+  Smooth: best deadzone __°  speed __×  readable while scrolling? __  scrolled by itself? __
+          direction right? __  mouth play/pause worked? __  talking/laughing paused it? __
+  Shorts: __ nods → __ videos   double skips __   went back by itself __
+          Shorts values (Copy): __
 
 What felt worst / what made you want to stop using it:
 Anything else:
