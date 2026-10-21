@@ -27,6 +27,7 @@ final class ControlEngine {
 
     private let input: VirtualInput
     private let aim: AimController
+    private let scroller: ScrollController
     private let tracker = HeadPoseTracker()
     private var angleFilter = HeadAnglesFilter()
     private var expressionFilter = ExpressionFilter()
@@ -49,9 +50,12 @@ final class ControlEngine {
     private var neutralAnchor: HeadAngles?
     private var lastSmoothedAngles: HeadAngles?
 
-    // Snake mode (see SnakeController.swift).
-    private var snake = SnakeController(settings: SnakeSettings())
-    /// Snake's own, lighter smoothing (the Smoothing slider).
+    // Snake mode, and Scroll mode's Shorts option: both use the same tap logic
+    // (SnakeController.swift), each with its own saved sliders.
+    private var taps = SnakeController(settings: SnakeSettings())
+    private var snakeSettings = SnakeSettings()
+    private var shortsSettings = SnakeSettings.shortsDefaults
+    /// The taps' own, lighter smoothing (the Smoothing slider).
     private var snakeFilter = OffsetFilter()
     private var snakeStatus = SnakeStatus()
     private var snakeLatencies = RollingAverage()
@@ -80,6 +84,10 @@ final class ControlEngine {
     /// aiming pause so the switch gesture can't walk or turn the camera.
     private var headPaused = false
     private var latestTilt: Double?
+
+    // Scroll mode (see ScrollController.swift).
+    private var scrollSettings = ScrollSettings()
+    private var scrollState = ScrollState()
 
     private var lastFaceSeenAt: Double?
     private var lastExpressionsAt: Double?
@@ -111,9 +119,10 @@ final class ControlEngine {
         return formatter
     }()
 
-    init(input: VirtualInput, aim: AimController) {
+    init(input: VirtualInput, aim: AimController, scroller: ScrollController) {
         self.input = input
         self.aim = aim
+        self.scroller = scroller
         refreshBindings()
     }
 
@@ -123,6 +132,7 @@ final class ControlEngine {
     func start() {
         queue.async {
             self.aim.setActive(self.mode.usesAim)
+            self.scroller.setActive(self.usesSmoothScroll)
             self.beginCalibration()
             self.startWatchdog()
         }
@@ -139,12 +149,13 @@ final class ControlEngine {
         queue.async {
             self.resetAllGestures(requireNeutral: true)
             self.aim.stopMoving()
+            self.scroller.stopMoving()
             self.logEvent(isOn ? "Control turned ON" : "Control turned OFF (everything released)")
             self.publish(force: true)
         }
     }
 
-    /// Switches between Keys, Aim and Snake. Releases everything first.
+    /// Switches between Keys, Aim, Snake, Minecraft and Scroll. Releases everything first.
     func setMode(_ newMode: ControlMode) {
         queue.async {
             guard newMode != self.mode else { return }
@@ -152,12 +163,13 @@ final class ControlEngine {
             self.input.releaseAll()
             self.aim.setActive(newMode.usesAim)
             self.aimState = AimState()
+            self.scroller.setActive(self.usesSmoothScroll)
+            self.scrollState = ScrollState(option: self.scrollSettings.option)
             self.headSwitch = HeadJobSwitch(tiltDegrees: self.minecraft.switchTiltDegrees)
             self.headPaused = false
             self.refreshBindings()
             self.lastTapAt.removeAll()
-            self.snake.requireReturn()
-            self.snakeFilter.reset()
+            self.startTapsFresh()
             self.floatingCenter.reset()
             self.logEvent("Mode: \(newMode.title) (everything released)")
             self.publish(force: true)
@@ -172,10 +184,39 @@ final class ControlEngine {
     /// New values from the Snake sliders.
     func setSnakeSettings(_ settings: SnakeSettings) {
         queue.async {
-            let smoothingWasOff = self.snake.settings.smoothingCutoff == nil
-            self.snake.settings = settings
-            if smoothingWasOff && settings.smoothingCutoff != nil {
-                self.snakeFilter.reset()  // Don't blend in stale values when turning smoothing on.
+            self.snakeSettings = settings
+            if self.mode == .snake { self.applyTapSettings(settings) }
+            self.publish(force: true)
+        }
+    }
+
+    /// New values from the Shorts sliders (Scroll mode).
+    func setShortsSettings(_ settings: SnakeSettings) {
+        queue.async {
+            self.shortsSettings = settings
+            if self.mode == .scroll { self.applyTapSettings(settings) }
+            self.publish(force: true)
+        }
+    }
+
+    /// New Scroll mode settings (option, sliders, switches). Changing the option or
+    /// the mouth switch releases everything and starts fresh.
+    func setScrollSettings(_ settings: ScrollSettings) {
+        queue.async {
+            let old = self.scrollSettings
+            self.scrollSettings = settings
+            guard self.mode == .scroll else { return }
+            let optionChanged = settings.option != old.option
+            if optionChanged || settings.mouthPlayPauseEnabled != old.mouthPlayPauseEnabled {
+                self.input.releaseAll()
+                self.scroller.setActive(self.usesSmoothScroll)
+                self.scrollState = ScrollState(option: settings.option)
+                self.refreshBindings()
+                self.startTapsFresh()
+                self.floatingCenter.reset()
+                if optionChanged {
+                    self.logEvent("Scroll: \(settings.option.title) (everything released)")
+                }
             }
             self.publish(force: true)
         }
@@ -243,12 +284,13 @@ final class ControlEngine {
             }
             self.input.releaseAll()
             self.aim.stopMoving()
+            self.scroller.stopMoving()
             self.neutralAngles = current
             self.neutralAnchor = current
             self.snakeFilter.reset()
             self.floatingCenter.reset()
             self.resetAllGestures(requireNeutral: true)
-            self.snake.arm()  // Your head IS the center now, so Snake is ready at once.
+            self.taps.arm()  // Your head IS the center now, so Snake/Shorts are ready at once.
             self.logEvent("Recentered: where your head is now is the new neutral")
             self.publish(force: true)
         }
@@ -288,9 +330,9 @@ final class ControlEngine {
         // 1. Vision: find the face, its head angles and its expressions.
         let result: TrackingResult
         do {
-            // Snake doesn't use the mouth/eyebrows, so skip that step for speed
-            // (but always read them while calibrating, for the other modes).
-            let wantExpressions = mode != .snake || calibrator.isCollecting
+            // Snake (and Scroll with the mouth switch off) doesn't use the mouth/eyebrows,
+            // so skip that step for speed (but always read them while calibrating).
+            let wantExpressions = needsExpressions || calibrator.isCollecting
             result = try tracker.analyze(pixelBuffer, readExpressions: wantExpressions)
             snapshot.visionError = nil
         } catch {
@@ -368,12 +410,12 @@ final class ControlEngine {
         // Everything is measured relative to your neutral face, from YOUR point of view.
         let relative = smoothedAngles - neutral
         var offset = PlayerDirections.offset(relative: relative, framesMirrored: framesMirrored)
-        if mode == .snake {
-            // Snake uses the raw angles with its own, lighter smoothing (Smoothing slider),
-            // because every millisecond of smoothing delay makes turns feel late.
+        if usesTaps {
+            // Snake/Shorts use the raw angles with their own, lighter smoothing (Smoothing
+            // slider), because every millisecond of smoothing delay makes turns feel late.
             let rawOffset = PlayerDirections.offset(relative: measurement.angles - neutral,
                                                     framesMirrored: framesMirrored)
-            offset = snakeFilter.filter(rawOffset, at: now, cutoff: snake.settings.smoothingCutoff)
+            offset = snakeFilter.filter(rawOffset, at: now, cutoff: taps.settings.smoothingCutoff)
         }
         snapshot.relativeAngles = relative
         snapshot.playerOffset = offset
@@ -399,10 +441,12 @@ final class ControlEngine {
         if input.isBlocked {
             resetAllGestures(requireNeutral: true)
             aim.stopMoving()
+            scroller.stopMoving()
+            scrollState.speed = 0
             headPaused = false
             aimState = AimState(active: headAimsNow, sensitivity: aim.currentSensitivity)
             floatingCenter.markOff("paused: \(input.currentBlockReasons.first?.rawValue ?? "input blocked")")
-            if mode == .snake { logSnakeAttemptWhileBlocked(offset) }
+            if usesTaps { logSnakeAttemptWhileBlocked(offset) }
             return
         }
         blockedByInputLogged = false
@@ -414,9 +458,11 @@ final class ControlEngine {
             runHoldGestures(values: values, timing: timing)
             aimState = aim.update(offset: offset, at: now)
         case .snake:
-            runSnake(offset: offset, timing: timing)
+            runTaps(offset: offset, timing: timing)
         case .minecraft:
             runMinecraft(values: values, offset: offset, tilt: tilt, timing: timing)
+        case .scroll:
+            runScroll(values: values, offset: offset, timing: timing)
         }
 
         // Last: let the center follow your head if it's resting (never while busy).
@@ -445,6 +491,8 @@ final class ControlEngine {
         aim.stopMoving()
         aimState.speedX = 0
         aimState.speedY = 0
+        scroller.stopMoving()
+        scrollState.speed = 0
         floatingCenter.reset()
         enforceFaceLostRule(now: now)
     }
@@ -560,16 +608,90 @@ final class ControlEngine {
         switch mode {
         case .aim: return true
         case .minecraft: return minecraft.headAims(job: headSwitch.job)
-        case .keys, .snake: return false
+        case .keys, .snake, .scroll: return false
         }
     }
 
-    /// Snake mode: one arrow-key TAP per turn. The rules live in SnakeController.
-    private func runSnake(offset: PlayerHeadOffset, timing: FrameTiming) {
-        let result = snake.update(offset: offset, at: timing.arrival)
+    /// Scroll mode: smooth scrolling, or Shorts flicks; the mouth can play/pause.
+    private func runScroll(values: [GestureID: Double], offset: PlayerHeadOffset, timing: FrameTiming) {
+        switch scrollSettings.option {
+        case .smooth:
+            // The mouth's Space tap (if switched on); the head drives the scroll timer.
+            runHoldGestures(values: values, timing: timing)
+            scrollState = scroller.update(up: offset.up, settings: scrollSettings, at: timing.arrival)
+        case .shorts:
+            // Head flicks tap ↓ / ↑ with Snake's rules. Only the expressions go through
+            // the hold gestures, so the head can't ALSO fire the arrows that way.
+            runTaps(offset: offset, timing: timing)
+            var expressionValues = values
+            for gesture in GestureID.allCases where gesture.isHeadGesture {
+                expressionValues[gesture] = nil
+            }
+            runHoldGestures(values: expressionValues, timing: timing)
+        }
+    }
 
-        for blocked in result.blocked {
-            let name = SnakeController.name(of: blocked.gesture)
+    /// Snake mode, and Scroll mode's Shorts option.
+    private var usesTaps: Bool {
+        mode == .snake || (mode == .scroll && scrollSettings.option == .shorts)
+    }
+
+    private var usesSmoothScroll: Bool {
+        mode == .scroll && scrollSettings.option == .smooth
+    }
+
+    /// Whether this mode reads the mouth/eyebrows (skipping them saves a few ms).
+    private var needsExpressions: Bool {
+        switch mode {
+        case .snake: return false
+        case .scroll: return scrollSettings.mouthPlayPauseEnabled
+        case .keys, .aim, .minecraft: return true
+        }
+    }
+
+    /// The tap rules' sliders for this mode (Snake's or Shorts').
+    private var activeTapSettings: SnakeSettings {
+        mode == .scroll ? shortsSettings : snakeSettings
+    }
+
+    /// New slider values for the taps currently in use.
+    private func applyTapSettings(_ settings: SnakeSettings) {
+        let smoothingWasOff = taps.settings.smoothingCutoff == nil
+        taps.settings = settings
+        if smoothingWasOff && settings.smoothingCutoff != nil {
+            snakeFilter.reset()  // Don't blend in stale values when turning smoothing on.
+        }
+    }
+
+    /// After a mode/option change: the right sliders, a fresh start and a fresh log.
+    private func startTapsFresh() {
+        applyTapSettings(activeTapSettings)
+        taps.requireReturn()
+        snakeFilter.reset()
+        snakeStatus = SnakeStatus()
+        snakeTurnLogIds.removeAll()
+    }
+
+    /// "LEFT", "UP"... in Snake; "NEXT ↓" / "PREVIOUS ↑" for Shorts.
+    private func turnName(_ gesture: GestureID) -> String {
+        if mode == .scroll {
+            switch gesture {
+            case .tiltDown: return "NEXT ↓"
+            case .tiltUp: return "PREVIOUS ↑"
+            default: break
+            }
+        }
+        return SnakeController.name(of: gesture)
+    }
+
+    /// Snake mode (and Shorts): one arrow-key TAP per turn. The rules live in
+    /// SnakeController. Directions without a key in this mode (left/right in
+    /// Shorts) are still tracked, for the extra-turn guard, but never sent or logged.
+    private func runTaps(offset: PlayerHeadOffset, timing: FrameTiming) {
+        let result = taps.update(offset: offset, at: timing.arrival)
+
+        for blocked in result.blocked where bindings[blocked.gesture] != nil {
+            let name = turnName(blocked.gesture)
             if blocked.isExtraTurn {
                 snakeStatus.ignoredExtraCount += 1
                 addTurnLog("\(name) IGNORED as an extra turn: \(blocked.reason)",
@@ -582,7 +704,7 @@ final class ControlEngine {
         for settled in result.settled {
             noteTurnReach(settled)
         }
-        for turn in result.turns {
+        for turn in result.turns where bindings[turn.gesture] != nil {
             scheduleSnakeTurn(turn, timing: timing)
         }
         if !result.turns.isEmpty || !result.blocked.isEmpty || !result.settled.isEmpty {
@@ -595,7 +717,7 @@ final class ControlEngine {
     /// thrown away. So "left, then immediately up" always arrives as two key presses.
     private func scheduleSnakeTurn(_ turn: SnakeTurn, timing: FrameTiming) {
         let now = HostClock.now()
-        let slot = max(now, lastSnakeTapSlot + snake.settings.minTurnInterval)
+        let slot = max(now, lastSnakeTapSlot + taps.settings.minTurnInterval)
         lastSnakeTapSlot = slot
         lastHeadOutputAt = timing.arrival  // Floating center waits after turns.
 
@@ -611,9 +733,9 @@ final class ControlEngine {
 
     /// Actually taps the arrow key (runs on the tracking queue).
     private func sendSnakeTurn(_ turn: SnakeTurn, timing: FrameTiming, delay: Double) {
-        let name = SnakeController.name(of: turn.gesture)
-        guard mode == .snake, let binding = bindings[turn.gesture] else {
-            addTurnLog("\(name) NOT SENT: left Snake mode", fired: false, latencyMs: nil)
+        let name = turnName(turn.gesture)
+        guard usesTaps, let binding = bindings[turn.gesture] else {
+            addTurnLog("\(name) NOT SENT: left the mode", fired: false, latencyMs: nil)
             return
         }
         if input.tap(binding.action, duration: Config.Snake.tapDuration) {
@@ -649,18 +771,18 @@ final class ControlEngine {
     /// While input is blocked (e.g. control OFF), log ONE line when you try to turn,
     /// so a "dead" game is easy to explain.
     private func logSnakeAttemptWhileBlocked(_ offset: PlayerHeadOffset) {
-        let press = snake.settings.pressDegrees
+        let press = taps.settings.pressDegrees
         let biggest = max(abs(offset.left), abs(offset.up))
-        if biggest >= press, !blockedByInputLogged {
+        let gesture: GestureID = abs(offset.left) >= abs(offset.up)
+            ? (offset.left > 0 ? .turnLeft : .turnRight)
+            : (offset.up > 0 ? .tiltUp : .tiltDown)
+        if biggest >= press, !blockedByInputLogged, bindings[gesture] != nil {
             blockedByInputLogged = true
-            let gesture: GestureID = abs(offset.left) >= abs(offset.up)
-                ? (offset.left > 0 ? .turnLeft : .turnRight)
-                : (offset.up > 0 ? .tiltUp : .tiltDown)
             let reason = input.currentBlockReasons.first?.rawValue ?? "input blocked"
             snakeStatus.blockedCount += 1
-            addTurnLog("\(SnakeController.name(of: gesture)) ignored: \(reason)", fired: false, latencyMs: nil)
+            addTurnLog("\(turnName(gesture)) ignored: \(reason)", fired: false, latencyMs: nil)
             publish(force: true)
-        } else if biggest < snake.settings.rearmDegrees {
+        } else if biggest < taps.settings.rearmDegrees {
             blockedByInputLogged = false
         }
     }
@@ -716,7 +838,14 @@ final class ControlEngine {
             return min(Config.Aim.horizontalDeadzone, Config.Aim.verticalDeadzone)
         case .snake:
             // Stricter than the re-arm zone: only a head that's really back at center.
-            return snake.settings.rearmDegrees * Config.FloatingCenter.snakeZoneFraction
+            return taps.settings.rearmDegrees * Config.FloatingCenter.snakeZoneFraction
+        case .scroll:
+            // Shorts: like Snake. Smooth scrolling: inside the deadzone, so the page
+            // never scrolls while the center follows.
+            if usesTaps {
+                return taps.settings.rearmDegrees * Config.FloatingCenter.snakeZoneFraction
+            }
+            return scrollSettings.deadzoneDegrees
         case .minecraft:
             // Aiming: inside the deadzone (option 3's walk zone is further out still).
             // Option 2 in MOVE: like Keys mode.
@@ -739,13 +868,14 @@ final class ControlEngine {
     private func floatingCenterBusyReason(now: Double) -> String? {
         // Snake waits longer after a turn: the head is often still turned or
         // returning, and following then would make the NEXT turn need extra movement.
-        let pause = mode == .snake ? Config.FloatingCenter.snakePauseAfterTurn : Config.FloatingCenter.pauseAfterOutput
+        let pause = usesTaps ? Config.FloatingCenter.snakePauseAfterTurn : Config.FloatingCenter.pauseAfterOutput
         if now - lastHeadOutputAt < pause {
-            return mode == .snake ? "a turn just fired" : "a direction just fired"
+            return usesTaps ? "a turn just fired" : "a direction just fired"
         }
-        if mode == .snake {
-            if snake.isHolding { return "a turn is about to fire" }
-            if !snake.bothArmed { return "a direction is re-arming" }
+        if usesSmoothScroll, scrollState.speed != 0 { return "scrolling" }
+        if usesTaps {
+            if taps.isHolding { return "a turn is about to fire" }
+            if !taps.bothArmed { return "a direction is re-arming" }
             return nil
         }
         // A head key held or about to fire (Keys mode, Minecraft options 2 and 3).
@@ -776,7 +906,11 @@ final class ControlEngine {
     /// waits for neutral first). The old detectors are thrown away, so the CALLER
     /// must release anything they held first.
     private func refreshBindings() {
-        bindings = mode == .minecraft ? minecraft.bindings(job: headSwitch.job) : mode.bindings
+        switch mode {
+        case .minecraft: bindings = minecraft.bindings(job: headSwitch.job)
+        case .scroll: bindings = scrollSettings.bindings
+        case .keys, .aim, .snake: bindings = mode.bindings
+        }
         var result: [GestureID: ThresholdGesture] = [:]
         for gesture in GestureID.allCases {
             let limits = thresholds(for: gesture)
@@ -793,6 +927,12 @@ final class ControlEngine {
         if mode == .minecraft, gesture.isHeadGesture, let walk = minecraft.headWalkThresholds {
             return walk
         }
+        if mode == .scroll, gesture == .mouthOpen {
+            // Play/pause: the mouth must stay open longer, so talking doesn't pause.
+            let mouth = Config.Gestures.mouthOpen
+            return GestureThresholds(press: mouth.press, release: mouth.release,
+                                     holdTime: Config.Scroll.mouthHoldTime)
+        }
         return gesture.thresholds
     }
 
@@ -800,7 +940,7 @@ final class ControlEngine {
         for gesture in GestureID.allCases {
             gestures[gesture]?.reset(requireNeutral: requireNeutral)
         }
-        snake.requireReturn()
+        taps.requireReturn()
         headSwitch.requireNeutral()
     }
 
@@ -918,8 +1058,14 @@ final class ControlEngine {
 
         snapshot.mode = mode
         snapshot.framesMirrored = framesMirrored
-        if mode == .snake {
+        if usesTaps {
             snapshot.snake = makeSnakeStatus(now: now)
+        }
+        if mode == .scroll {
+            var scroll = scrollState
+            scroll.option = scrollSettings.option
+            scroll.active = usesSmoothScroll
+            snapshot.scroll = scroll
         }
         if mode == .minecraft {
             snapshot.minecraft = MinecraftStatus(option: minecraft.option,
@@ -954,7 +1100,7 @@ final class ControlEngine {
                     firing = lastTapAt[gesture].map { now - $0 < Config.UI.tapFlashDuration } ?? false
                 }
             }
-            if mode == .snake && gesture.isHeadGesture {
+            if usesTaps && gesture.isHeadGesture {
                 return snakeGestureSnapshot(gesture, binding: binding, firing: firing, now: now)
             }
             return GestureSnapshot(gesture: gesture,
@@ -983,12 +1129,12 @@ final class ControlEngine {
     private func makeSnakeStatus(now: Double) -> SnakeStatus {
         var status = snakeStatus
         status.blocker = snakeBlocker()
-        status.horizontalText = snake.horizontal.statusText(settings: snake.settings)
-        status.verticalText = snake.vertical.statusText(settings: snake.settings)
-        status.horizontalArmed = snake.horizontal.isArmed
-        status.verticalArmed = snake.vertical.isArmed
-        status.horizontalSpeed = snake.horizontal.speed
-        status.verticalSpeed = snake.vertical.speed
+        status.horizontalText = taps.horizontal.statusText(settings: taps.settings)
+        status.verticalText = taps.vertical.statusText(settings: taps.settings)
+        status.horizontalArmed = taps.horizontal.isArmed
+        status.verticalArmed = taps.vertical.isArmed
+        status.horizontalSpeed = taps.horizontal.speed
+        status.verticalSpeed = taps.vertical.speed
         status.secondsSinceLastTurn = lastSnakeTurnAt.map { now - $0 }
         status.averageTurnLatencyMs = snakeLatencies.average
         return status
@@ -1012,9 +1158,9 @@ final class ControlEngine {
     private func snakeGestureSnapshot(_ gesture: GestureID, binding: OutputBinding?,
                                       firing: Bool, now: Double) -> GestureSnapshot {
         let isHorizontal = gesture == .turnLeft || gesture == .turnRight
-        let axis = isHorizontal ? snake.horizontal : snake.vertical
+        let axis = isHorizontal ? taps.horizontal : taps.vertical
         let sign: Double = (gesture == .turnLeft || gesture == .tiltUp) ? 1 : -1
-        let settings = snake.settings
+        let settings = taps.settings
 
         let phase: GesturePhase
         switch axis.phase {

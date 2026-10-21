@@ -37,10 +37,10 @@ struct DebugView: View {
                         GroupBox(label: Text("Gestures")) {
                             GestureTable(gestures: snap.gestures,
                                          mode: snap.mode,
-                                         isSnake: snap.mode == .snake)
+                                         isSnake: showsTurnLog)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        if snap.mode == .snake {
+                        if showsTurnLog {
                             TurnLogView(entries: snap.snake.turnLog)
                         }
                     }
@@ -53,6 +53,11 @@ struct DebugView: View {
                         } else if snap.mode == .minecraft {
                             MinecraftPanel(model: model, controller: controller)
                             aimBox
+                        } else if snap.mode == .scroll {
+                            ScrollPanel(model: model, controller: controller)
+                            if model.scrollSettings.option == .shorts {
+                                SnakePanel(model: model, controller: controller, forShorts: true)
+                            }
                         } else {
                             aimBox
                         }
@@ -64,6 +69,11 @@ struct DebugView: View {
             }
             .padding(16)
         }
+    }
+
+    /// Snake, and Scroll mode's Shorts: the same tap logic, so the same Turn log.
+    private var showsTurnLog: Bool {
+        snap.mode == .snake || (snap.mode == .scroll && model.scrollSettings.option == .shorts)
     }
 
     /// The Direction pad's dashed box (degrees): where things fire in this mode, or
@@ -90,6 +100,15 @@ struct DebugView: View {
             case .splitZones:
                 // The walk zone: inside it the head only aims.
                 return (width: settings.walkZoneDegrees, height: settings.walkZoneDegrees)
+            }
+        case .scroll:
+            switch model.scrollSettings.option {
+            case .smooth:
+                let deadzone = model.scrollSettings.deadzoneDegrees
+                return (width: deadzone, height: deadzone)
+            case .shorts:
+                let press = model.shortsSettings.pressDegrees
+                return (width: press, height: press)
             }
         }
     }
@@ -255,6 +274,8 @@ struct DebugView: View {
             return "For Google Snake: each turn or quick flick of your head taps one arrow key. After a turn, that direction re-arms as soon as you come partway back. Tune it live in the Snake panel (right). Expressions are off."
         case .minecraft:
             return "For Minecraft Classic (classic.minecraft.net): the head walks AND looks around, in one of three ways. Pick the head option in the Minecraft panel (right)."
+        case .scroll:
+            return "For YouTube and other pages: tilt to scroll smoothly, or flick to the next / previous Short. Pick the option in the Scroll panel (right)."
         }
     }
 

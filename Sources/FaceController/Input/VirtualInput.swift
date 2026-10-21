@@ -112,6 +112,28 @@ final class VirtualInput {
         return true
     }
 
+    // MARK: - Scrolling
+
+    /// Scrolls whatever is under the mouse pointer by `pointsDown` (+ = down the
+    /// page, − = up) with a real scroll-wheel event. Refused while input is blocked.
+    @discardableResult
+    func scroll(pointsDown: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard blockReasons.isEmpty, pointsDown != 0 else { return false }
+        // Pixel units = smooth, trackpad-like scrolling. For the scroll wheel a
+        // NEGATIVE value means "scroll down", so the sign flips here.
+        guard let event = CGEvent(scrollWheelEvent2Source: eventSource,
+                                  units: .pixel,
+                                  wheelCount: 1,
+                                  wheel1: Int32(clamping: -pointsDown),
+                                  wheel2: 0,
+                                  wheel3: 0) else { return false }
+        event.flags = []  // Never Control+scroll (zoom) or Shift+scroll (sideways).
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
     // MARK: - Blocking
 
     /// Adds or removes a reason that blocks input.

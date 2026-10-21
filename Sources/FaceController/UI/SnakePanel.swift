@@ -3,15 +3,27 @@ import SwiftUI
 
 /// Snake mode's live tuning panel: recenter, why a turn isn't firing, the last
 /// turn's latency, and sliders that change the rules instantly (saved between launches).
+/// Scroll mode's Shorts option uses the same panel (`forShorts`) with its own values.
 struct SnakePanel: View {
     @ObservedObject var model: DebugModel
     let controller: AppController
+    /// true = tune Scroll mode's Shorts flicks instead of Snake.
+    var forShorts = false
 
     private var status: SnakeStatus { model.engine.snake }
-    private var settings: SnakeSettings { model.snakeSettings }
+    private var settings: SnakeSettings { forShorts ? model.shortsSettings : model.snakeSettings }
+
+    /// Sends edited values to the right place (Snake's or Shorts' saved settings).
+    private func send(_ updated: SnakeSettings) {
+        if forShorts {
+            controller.setShortsSettings(updated)
+        } else {
+            controller.setSnakeSettings(updated)
+        }
+    }
 
     var body: some View {
-        GroupBox(label: Text("Snake tuning (saved automatically)")) {
+        GroupBox(label: Text(forShorts ? "Shorts flick tuning (saved automatically)" : "Snake tuning (saved automatically)")) {
             VStack(alignment: .leading, spacing: 8) {
                 recenterRow
                 Divider()
@@ -60,7 +72,9 @@ struct SnakePanel: View {
                     .font(.callout.bold())
                     .foregroundColor(.orange)
             }
-            axisLine(armed: status.horizontalArmed, text: status.horizontalText, speed: status.horizontalSpeed)
+            if !forShorts {  // Shorts only uses up/down.
+                axisLine(armed: status.horizontalArmed, text: status.horizontalText, speed: status.horizontalSpeed)
+            }
             axisLine(armed: status.verticalArmed, text: status.verticalText, speed: status.verticalSpeed)
         }
     }
@@ -108,22 +122,22 @@ struct SnakePanel: View {
     /// A binding that edits one field of the Snake settings and sends the result on.
     private func setting(_ keyPath: WritableKeyPath<SnakeSettings, Double>) -> Binding<Double> {
         Binding(
-            get: { model.snakeSettings[keyPath: keyPath] },
+            get: { settings[keyPath: keyPath] },
             set: { newValue in
-                var updated = model.snakeSettings
+                var updated = settings
                 updated[keyPath: keyPath] = newValue
-                controller.setSnakeSettings(updated)
+                send(updated)
             })
     }
 
     /// A binding for one of the on/off switches in the Snake settings.
     private func toggle(_ keyPath: WritableKeyPath<SnakeSettings, Bool>) -> Binding<Bool> {
         Binding(
-            get: { model.snakeSettings[keyPath: keyPath] },
+            get: { settings[keyPath: keyPath] },
             set: { newValue in
-                var updated = model.snakeSettings
+                var updated = settings
                 updated[keyPath: keyPath] = newValue
-                controller.setSnakeSettings(updated)
+                send(updated)
             })
     }
 
@@ -167,7 +181,9 @@ struct SnakePanel: View {
                 }
             }
 
-            Text("Optional blocks (off = nothing gets eaten; Google Snake ignores reversals and repeats itself)")
+            Text(forShorts
+                 ? "Blocks (keep ON for Shorts: an extra flick means a wrong video)"
+                 : "Optional blocks (off = nothing gets eaten; Google Snake ignores reversals and repeats itself)")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -229,10 +245,14 @@ struct SnakePanel: View {
                 Button("Copy") {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString("Snake: \(settings.summary)", forType: .string)
+                    pasteboard.setString("\(forShorts ? "Shorts" : "Snake"): \(settings.summary)", forType: .string)
                 }
                 Button("Reset to defaults") {
-                    controller.resetSnakeSettings()
+                    if forShorts {
+                        controller.setShortsSettings(SnakeSettings.shortsDefaults)
+                    } else {
+                        controller.resetSnakeSettings()
+                    }
                 }
             }
         }

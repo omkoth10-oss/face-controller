@@ -110,10 +110,13 @@ struct EngineSnapshot {
 
     // Gestures
     var gestures: [GestureSnapshot] = []
-    /// Snake mode's live state (only filled in Snake mode).
+    /// Snake mode's live state (filled in Snake mode and Scroll mode's Shorts).
     var snake = SnakeStatus()
     /// Minecraft preset's live state (only filled in Minecraft mode).
     var minecraft = MinecraftStatus()
+    /// Scroll mode's live state (only filled in Scroll mode). Shorts flicks also
+    /// fill `snake` (same tap logic, same Turn log).
+    var scroll = ScrollState()
 
     // Aiming
     var aim = AimState()

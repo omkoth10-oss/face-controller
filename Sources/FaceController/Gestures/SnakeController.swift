@@ -70,18 +70,46 @@ struct SnakeSettings: Codable, Equatable {
     // MARK: Saving
 
     private static let storageKey = "snakeSettings.v1"
+    /// Scroll mode's Shorts option uses the same rules with its own saved values.
+    private static let shortsStorageKey = "shortsSettings.v1"
 
     static func load() -> SnakeSettings {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        load(key: storageKey, fallback: SnakeSettings())
+    }
+
+    func save() {
+        save(key: Self.storageKey)
+    }
+
+    /// Shorts starting values: the Snake defaults with Config.Scroll's changes
+    /// (longer hold, bounce-back and double-turn blocks on).
+    static var shortsDefaults: SnakeSettings {
+        var settings = SnakeSettings()
+        settings.holdTime = Config.Scroll.shortsHoldTime
+        settings.bounceBlockEnabled = Config.Scroll.shortsBounceBlockEnabled
+        settings.sameDirectionBlockEnabled = Config.Scroll.shortsSameDirectionBlockEnabled
+        return settings
+    }
+
+    static func loadShorts() -> SnakeSettings {
+        load(key: shortsStorageKey, fallback: shortsDefaults)
+    }
+
+    func saveShorts() {
+        save(key: Self.shortsStorageKey)
+    }
+
+    private static func load(key: String, fallback: SnakeSettings) -> SnakeSettings {
+        guard let data = UserDefaults.standard.data(forKey: key),
               let saved = try? JSONDecoder().decode(SnakeSettings.self, from: data) else {
-            return SnakeSettings()
+            return fallback
         }
         return saved.clamped()
     }
 
-    func save() {
+    private func save(key: String) {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.storageKey)
+            UserDefaults.standard.set(data, forKey: key)
         }
     }
 

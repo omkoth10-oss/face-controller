@@ -8,11 +8,12 @@ struct FloatingCenterSettings: Codable, Equatable {
     var aimEnabled = Config.FloatingCenter.defaultEnabled
     var snakeEnabled = Config.FloatingCenter.defaultEnabled
     var minecraftEnabled = Config.FloatingCenter.defaultEnabled
+    var scrollEnabled = Config.FloatingCenter.defaultEnabled
     /// About how many seconds the center takes to catch up with your resting head.
     var followTime = Config.FloatingCenter.defaultFollowTime
 
     enum CodingKeys: String, CodingKey {
-        case keysEnabled, aimEnabled, snakeEnabled, minecraftEnabled, followTime
+        case keysEnabled, aimEnabled, snakeEnabled, minecraftEnabled, scrollEnabled, followTime
     }
 
     func isEnabled(for mode: ControlMode) -> Bool {
@@ -21,6 +22,7 @@ struct FloatingCenterSettings: Codable, Equatable {
         case .aim: return aimEnabled
         case .snake: return snakeEnabled
         case .minecraft: return minecraftEnabled
+        case .scroll: return scrollEnabled
         }
     }
 
@@ -30,6 +32,7 @@ struct FloatingCenterSettings: Codable, Equatable {
         case .aim: aimEnabled = enabled
         case .snake: snakeEnabled = enabled
         case .minecraft: minecraftEnabled = enabled
+        case .scroll: scrollEnabled = enabled
         }
     }
 
@@ -77,6 +80,7 @@ extension FloatingCenterSettings {
         snakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .snakeEnabled) ?? defaults.snakeEnabled
         minecraftEnabled = try container.decodeIfPresent(Bool.self, forKey: .minecraftEnabled)
             ?? defaults.minecraftEnabled
+        scrollEnabled = try container.decodeIfPresent(Bool.self, forKey: .scrollEnabled) ?? defaults.scrollEnabled
         followTime = try container.decodeIfPresent(Double.self, forKey: .followTime) ?? defaults.followTime
     }
 }

@@ -20,6 +20,10 @@ final class DebugModel: ObservableObject {
     @Published var floatingCenterSettings = FloatingCenterSettings.load()
     /// Minecraft preset: head option and its sliders (loaded from the last launch).
     @Published var minecraftSettings = MinecraftSettings.load()
+    /// Scroll mode: option, sliders, switches (loaded from the last launch).
+    @Published var scrollSettings = ScrollSettings.load()
+    /// Scroll mode's Shorts flick sliders (same kind as Snake's, saved separately).
+    @Published var shortsSettings = SnakeSettings.loadShorts()
     @Published var recenterHotKeyRegistered = false
 }
 
@@ -37,6 +41,7 @@ final class AppController {
     let model = DebugModel()
     let input: VirtualInput
     let aim: AimController
+    let scroller: ScrollController
     let engine: ControlEngine
     let camera: CameraManager
 
@@ -54,9 +59,11 @@ final class AppController {
     init() {
         let input = VirtualInput()
         let aim = AimController(input: input)
-        let engine = ControlEngine(input: input, aim: aim)
+        let scroller = ScrollController(input: input)
+        let engine = ControlEngine(input: input, aim: aim, scroller: scroller)
         self.input = input
         self.aim = aim
+        self.scroller = scroller
         self.engine = engine
         // Frames go straight from the camera to the engine, on the engine's queue.
         self.camera = CameraManager(frameQueue: engine.queue,
@@ -88,6 +95,8 @@ final class AppController {
         engine.setSnakeSettings(model.snakeSettings)
         engine.setFloatingCenterSettings(model.floatingCenterSettings)
         engine.setMinecraftSettings(model.minecraftSettings)
+        engine.setScrollSettings(model.scrollSettings)
+        engine.setShortsSettings(model.shortsSettings)
         engine.start()
         updateOverlay()
 
@@ -127,6 +136,7 @@ final class AppController {
         // without waiting for the tracking loop. It also stops the mouse.
         input.setBlocked(.controlOff, !enabled)
         aim.stopMoving()
+        scroller.stopMoving()
         engine.controlWasToggled(isOn: enabled)
         model.controlEnabled = enabled
         // An audible cue, so you know the state even inside a full-screen game.
@@ -137,12 +147,13 @@ final class AppController {
         engine.recalibrate()
     }
 
-    /// Keys / Aim / Snake / Minecraft. Releases everything immediately, then switches.
+    /// Keys / Aim / Snake / Minecraft / Scroll. Releases everything immediately, then switches.
     func setMode(_ mode: ControlMode) {
         guard mode != model.mode else { return }
         model.mode = mode
         input.releaseAll()
         aim.stopMoving()
+        scroller.stopMoving()
         engine.setMode(mode)
         updateOverlay()
     }
@@ -178,6 +189,29 @@ final class AppController {
         model.floatingCenterSettings = clamped
         clamped.save()
         engine.setFloatingCenterSettings(clamped)
+    }
+
+    /// Scroll mode changes (option, sliders, switches): used now and saved.
+    func setScrollSettings(_ settings: ScrollSettings) {
+        let clamped = settings.clamped()
+        guard clamped != model.scrollSettings else { return }
+        model.scrollSettings = clamped
+        clamped.save()
+        engine.setScrollSettings(clamped)
+    }
+
+    func resetScrollSettings() {
+        setScrollSettings(ScrollSettings())
+        setShortsSettings(SnakeSettings.shortsDefaults)
+    }
+
+    /// New Shorts flick slider values: used immediately and saved for next time.
+    func setShortsSettings(_ settings: SnakeSettings) {
+        let clamped = settings.clamped()
+        guard clamped != model.shortsSettings else { return }
+        model.shortsSettings = clamped
+        clamped.saveShorts()
+        engine.setShortsSettings(clamped)
     }
 
     /// Minecraft preset changes (head option, sliders, overlay): used now and saved.

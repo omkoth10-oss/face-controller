@@ -104,6 +104,9 @@ enum ControlMode: String, CaseIterable, Identifiable {
     /// Minecraft preset: the head moves AND aims, in one of three switchable ways
     /// (HeadOptions.swift).
     case minecraft
+    /// Scroll pages (smooth scroll-wheel scrolling) or flick through YouTube Shorts
+    /// (ScrollController.swift).
+    case scroll
 
     var id: String { rawValue }
 
@@ -113,18 +116,19 @@ enum ControlMode: String, CaseIterable, Identifiable {
         case .aim: return "Aim (mouse)"
         case .snake: return "Snake"
         case .minecraft: return "Minecraft"
+        case .scroll: return "Scroll"
         }
     }
 
     /// Which gestures do what in this mode (edit these in Config.Mapping).
-    /// Minecraft's depend on the head option you pick, so they come from
-    /// `MinecraftSettings.bindings(job:)` instead.
+    /// Minecraft's and Scroll's depend on the option you pick, so they come from
+    /// `MinecraftSettings.bindings(job:)` / `ScrollSettings.bindings` instead.
     var bindings: [GestureID: OutputBinding] {
         switch self {
         case .keys: return Config.Mapping.keys
         case .aim: return Config.Mapping.aim
         case .snake: return Config.Mapping.snake
-        case .minecraft: return [:]
+        case .minecraft, .scroll: return [:]
         }
     }
 

@@ -319,6 +319,59 @@ enum Config {
         static let defaultOverlayEnabled = true
     }
 
+    // MARK: - Scroll mode (YouTube and other pages)
+
+    /// Two options, picked in the Scroll panel (see ScrollController.swift):
+    /// SMOOTH: tilt down/up scrolls the page with real scroll-wheel events, faster
+    /// the further you tilt. SHORTS: one head flick down = next Short (↓), up =
+    /// previous Short (↑), using Snake's tap logic with its own saved sliders.
+    /// The `default...` values are only the starting values of the panel's controls.
+    enum Scroll {
+        static let defaultOption: ScrollOption = .smooth
+
+        // Smooth scrolling.
+        /// No scrolling within this many degrees of tilt (slider). Your calibration
+        /// jitter for up/down is usually 1–2°, so this stays well above it.
+        static let defaultDeadzoneDegrees: Double = 4
+        static let deadzoneRange: ClosedRange<Double> = 2...10
+        /// Speed multiplier (the Speed slider).
+        static let defaultSpeed: Double = 1.0
+        static let speedRange: ClosedRange<Double> = 0.25...3
+        /// Tilting this far (or further) scrolls at full speed.
+        static let fullSpeedDegrees: Double = 15
+        /// Full speed in points per second, at Speed 1.0.
+        static let maxSpeed: Double = 1500
+        /// Response curve: higher = slower and finer just past the deadzone.
+        static let curveExponent: Double = 2.0
+        /// Smooth acceleration: the speed glides to the target over about this long...
+        static let speedUpTime: Double = 0.25
+        /// ...and slows down faster, so it stops promptly when you look back up.
+        static let slowDownTime: Double = 0.10
+        /// Below this speed (points/s) a slowing scroll just stops.
+        static let stopBelowSpeed: Double = 5
+        /// Scroll events per second (smoother than the camera's 30).
+        static let outputRate: Double = 120
+        /// No fresh head data for this long: stop scrolling (safety).
+        static let staleAfter: Double = 0.12
+
+        // Shorts: what the flicks press (YouTube Shorts: ↓ next, ↑ previous).
+        static let nextShort = OutputBinding.tap(.key(CGKeyCode(kVK_DownArrow)), "↓ next")
+        static let previousShort = OutputBinding.tap(.key(CGKeyCode(kVK_UpArrow)), "↑ previous")
+        /// Shorts flick sliders start as the owner's Snake values, except: a longer
+        /// hold for slow tilts (looking down at your desk shouldn't skip a video),
+        /// and the bounce-back and double-turn blocks ON, because in Shorts an extra
+        /// flick means a WRONG video (Snake ignores reversals; YouTube doesn't).
+        static let shortsHoldTime: Double = 0.120
+        static let shortsBounceBlockEnabled = true
+        static let shortsSameDirectionBlockEnabled = true
+
+        // Optional: mouth open = play / pause.
+        static let defaultMouthPlayPause = true
+        static let playPause = OutputBinding.tap(.key(CGKeyCode(kVK_Space)), "Space (play/pause)")
+        /// The mouth must stay open this long, so talking and short laughs don't pause.
+        static let mouthHoldTime: Double = 0.30
+    }
+
     // MARK: - Recenter
 
     /// Instantly makes "where your head is now" the new neutral (no 3-second
